@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/1broseidon/ketch/pkg/scrape"
+	"github.com/1broseidon/ketch/scrape"
 	"github.com/spf13/cobra"
 )
 

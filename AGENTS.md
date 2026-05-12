@@ -19,37 +19,20 @@ cmd/
   browser.go                 Browser command: install, status
   proc_unix.go               Unix process management (detach, signals)
   proc_windows.go            Windows process management stub
-internal/
-  search/
-    search.go                Searcher interface + Result type
-    brave.go                 Brave Search API backend (default)
-    ddg.go                   DuckDuckGo HTML backend
-    searxng.go               SearXNG JSON API backend
-  code/
-    code.go                  code.Searcher interface + Result type
-    sourcegraph.go           Sourcegraph SSE streaming backend (no auth required)
-    github.go                GitHub Code Search REST + GraphQL stars batch (token required)
-  docs/
-    docs.go                  docs.Searcher interface + Result type
-    context7.go              Context7 two-step resolve+fetch backend (API key required)
-    fts5.go                  Local FTS5 SQLite backend stub (planned)
-  scrape/
-    scrape.go                HTTP fetch chain + Page type, JS detection fallback
-                             Scraper.Fetch() is exported — returns raw HTML before extraction pipeline
-    browser_iface.go         BrowserConn interface + ResolveBrowserBin
-    browser.go               Rod-based headless Chrome fetch
-  extract/
-    extract.go               readability + html-to-markdown pipeline
-    detect.go                JS shell detection heuristic
-  crawl/
-    crawl.go                 BFS crawler: work queue, worker pool, per-host JS tracking
-    status.go                Background crawl status: read/write/list JSON status files
-  config/
-    config.go                JSON config loading/saving (~/.config/ketch/)
-  cache/
-    cache.go                 Cache struct (TTL, Store interface), cacheKey hashing
-    bbolt.go                 BBoltStore: embedded key-value cache backend
+search/                      Searcher interface + Brave/DDG/SearXNG backends
+code/                        code.Searcher interface + Sourcegraph/GitHub backends
+docs/                        docs.Searcher interface + Context7/FTS5 backends
+scrape/                      HTTP fetch + Page type, JS detection fallback, Rod browser
+extract/                     readability + html-to-markdown pipeline, JS shell detection
+crawl/                       BFS crawler, work queue + worker pool, background status
+config/                      JSON config loading/saving (~/.config/ketch/)
+cache/                       TTL page cache (Store interface, BBoltStore backend)
+httpx/                       Shared tuned *http.Transport for all HTTP backends
+updatecheck/                 "new release available" probe + throttled stderr hint
+site/                        VitePress documentation site (deployed to gh-pages)
 ```
+
+Reusable packages live at the module root so external programs can `import "github.com/1broseidon/ketch/<pkg>"`. Nothing is module-private right now — if something becomes CLI-only, move it under `internal/`.
 
 ## Design Principles
 

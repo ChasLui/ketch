@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/1broseidon/ketch/pkg/httpx"
+	"github.com/1broseidon/ketch/httpx"
 )
 
 // SearXNG searches a SearXNG instance via its JSON API.

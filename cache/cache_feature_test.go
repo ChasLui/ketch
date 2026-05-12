@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/1broseidon/ketch/pkg/scrape"
+	"github.com/1broseidon/ketch/scrape"
 )
 
 func newTestCache(t *testing.T, ttl time.Duration) *Cache {

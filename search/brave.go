@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/1broseidon/ketch/pkg/httpx"
+	"github.com/1broseidon/ketch/httpx"
 )
 
 // Brave searches via the Brave Search API.

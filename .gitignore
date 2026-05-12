@@ -12,9 +12,9 @@ coverage.out
 *.swp
 
 # Docs
-docs/node_modules
-docs/.vitepress/dist
-docs/.vitepress/cache
+site/node_modules
+site/.vitepress/dist
+site/.vitepress/cache
 
 # OS
 .DS_Store

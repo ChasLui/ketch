@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/1broseidon/ketch/pkg/code"
-	"github.com/1broseidon/ketch/pkg/config"
+	"github.com/1broseidon/ketch/code"
+	"github.com/1broseidon/ketch/config"
 	"github.com/spf13/cobra"
 )
 

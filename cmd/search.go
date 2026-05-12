@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/1broseidon/ketch/pkg/cache"
-	"github.com/1broseidon/ketch/pkg/scrape"
-	"github.com/1broseidon/ketch/pkg/search"
+	"github.com/1broseidon/ketch/cache"
+	"github.com/1broseidon/ketch/scrape"
+	"github.com/1broseidon/ketch/search"
 	"github.com/spf13/cobra"
 )
 

@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/1broseidon/ketch/pkg/cache"
-	"github.com/1broseidon/ketch/pkg/crawl"
+	"github.com/1broseidon/ketch/cache"
+	"github.com/1broseidon/ketch/crawl"
 	"github.com/spf13/cobra"
 )
 

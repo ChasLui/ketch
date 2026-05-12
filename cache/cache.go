@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/1broseidon/ketch/pkg/scrape"
+	"github.com/1broseidon/ketch/scrape"
 )
 
 // Store is the interface for cache storage backends.

@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/1broseidon/ketch/pkg/httpx"
+	"github.com/1broseidon/ketch/httpx"
 )
 
 // Sourcegraph searches code via the Sourcegraph streaming search API.

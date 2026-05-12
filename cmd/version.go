@@ -8,7 +8,7 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/1broseidon/ketch/pkg/updatecheck"
+	"github.com/1broseidon/ketch/updatecheck"
 	"github.com/spf13/cobra"
 )
 

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/1broseidon/ketch/pkg/httpx"
+	"github.com/1broseidon/ketch/httpx"
 )
 
 // GitHub searches code via the GitHub Code Search REST API.

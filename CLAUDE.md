@@ -7,12 +7,12 @@ Fast, stateless CLI for agentic web search and scrape. Single Go binary, no daem
 See [AGENTS.md](AGENTS.md) for full module layout and design principles.
 
 - `cmd/` — Cobra CLI (root, search, scrape, crawl, config, cache, browser)
-- `internal/search/` — `Searcher` interface with Brave (default), DDG, and SearXNG backends
-- `internal/scrape/` — HTTP fetch + browser fallback via Rod for JS-rendered pages
-- `internal/extract/` — readability + html-to-markdown pipeline, JS shell detection heuristic
-- `internal/crawl/` — BFS/sitemap crawler with background execution and status tracking
-- `internal/config/` — JSON config at `~/.config/ketch/config.json`
-- `internal/cache/` — TTL-based page cache backed by bbolt (`~/.cache/ketch/cache.db`)
+- `search/` — `Searcher` interface with Brave (default), DDG, and SearXNG backends
+- `scrape/` — HTTP fetch + browser fallback via Rod for JS-rendered pages
+- `extract/` — readability + html-to-markdown pipeline, JS shell detection heuristic
+- `crawl/` — BFS/sitemap crawler with background execution and status tracking
+- `config/` — JSON config at `~/.config/ketch/config.json`
+- `cache/` — TTL-based page cache backed by bbolt (`~/.cache/ketch/cache.db`)
 
 ### Build & Test
 
@@ -88,8 +88,8 @@ ketch docs --resolve "glamour"                 # list matching library IDs
 
 JS-rendered pages (React SPAs, Salesforce Lightning, etc.) are automatically detected and re-fetched via headless Chrome using [Rod](https://go-rod.github.io/). No build tags — Rod is a regular pure Go dependency.
 
-- Detection: `internal/extract/detect.go` — heuristic checks visible text, noscript tags, SPA framework markers, script-to-text ratio
-- Browser: `internal/scrape/browser.go` — Rod-based fetch with 30s timeout, WaitLoad + WaitStable
+- Detection: `extract/detect.go` — heuristic checks visible text, noscript tags, SPA framework markers, script-to-text ratio
+- Browser: `scrape/browser.go` — Rod-based fetch with 30s timeout, WaitLoad + WaitStable
 - Config: `ketch config set browser chrome` (or `chromium`, or absolute path)
 - Install: `ketch browser install` downloads Chromium to cache dir
 - Transparent: agent never knows — same output format, browser is an automatic fallback
@@ -116,7 +116,7 @@ ketch scrape --no-cache   # bypass
 
 Default TTL: 72h. Configure via `ketch config set cache_ttl 4h`.
 
-The `Store` interface (`internal/cache/cache.go`) allows swapping backends. Default is bbolt; the interface is ready for future backends (redis, etc.).
+The `Store` interface (`cache/cache.go`) allows swapping backends. Default is bbolt; the interface is ready for future backends (redis, etc.).
 
 ### Crawl
 

@@ -14,10 +14,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/1broseidon/ketch/pkg/cache"
-	"github.com/1broseidon/ketch/pkg/extract"
-	"github.com/1broseidon/ketch/pkg/httpx"
-	"github.com/1broseidon/ketch/pkg/scrape"
+	"github.com/1broseidon/ketch/cache"
+	"github.com/1broseidon/ketch/extract"
+	"github.com/1broseidon/ketch/httpx"
+	"github.com/1broseidon/ketch/scrape"
 	"github.com/spf13/cobra"
 )
 

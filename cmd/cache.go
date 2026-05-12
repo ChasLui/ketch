@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/1broseidon/ketch/pkg/cache"
+	"github.com/1broseidon/ketch/cache"
 	"github.com/spf13/cobra"
 )
 
