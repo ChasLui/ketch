@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-05-12
+
+### Fixed
+- Page cache no longer returns unrendered JS-shell garbage after the user configures a browser. Entries now record the fetch source (`http` / `http_shell` / `browser`); a cache hit is bypassed when the entry was an unrendered JS-shell extraction and a browser is now available. Plain HTTP entries are not churned by browser config changes. Pre-existing entries (no source recorded) are invalidated once when a browser is configured, migrating them in place. Fixes #7.
+
 ## [0.7.1] - 2026-04-21
 
 ### Fixed
