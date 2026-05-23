@@ -18,6 +18,7 @@ import (
 	"github.com/1broseidon/ketch/extract"
 	"github.com/1broseidon/ketch/httpx"
 	"github.com/1broseidon/ketch/scrape"
+	"github.com/1broseidon/ketch/urlrewrite"
 	"github.com/spf13/cobra"
 )
 
@@ -60,12 +61,11 @@ func runScrape(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	var scraper *scrape.Scraper
-	if cfg.Browser != "" {
-		scraper = scrape.NewWithBrowser(cfg.Browser)
-	} else {
-		scraper = scrape.New()
+	rw, err := urlrewrite.NewRewriter(cfg.URLRewrites)
+	if err != nil {
+		return fmt.Errorf("invalid url_rewrites: %w", err)
 	}
+	scraper := scrape.NewWithRewriter(cfg.Browser, rw)
 	defer scraper.Close()
 
 	pc := newPageCache(noCache)
@@ -171,8 +171,11 @@ func newPageCache(noCache bool) *cache.Cache {
 // Hits are bypassed when the entry was extracted from an unrendered JS shell
 // and a browser is now available to do better, or when the entry predates
 // source tracking (a one-time migration once a browser is configured).
+// The cache is keyed by the rewritten URL so original and rewritten URLs
+// share one cache entry.
 func cachedScrape(ctx context.Context, s *scrape.Scraper, pc *cache.Cache, url string) (*scrape.Page, error) {
-	if page, source := pc.Get(url); page != nil && !scrape.CacheStaleForBrowser(source, s.HasBrowser()) {
+	key := s.Rewrite(url)
+	if page, source := pc.Get(key); page != nil && !scrape.CacheStaleForBrowser(source, s.HasBrowser()) {
 		return page, nil
 	}
 
@@ -181,7 +184,7 @@ func cachedScrape(ctx context.Context, s *scrape.Scraper, pc *cache.Cache, url s
 		return nil, err
 	}
 
-	pc.Put(url, page, source)
+	pc.Put(key, page, source)
 	return page, nil
 }
 
