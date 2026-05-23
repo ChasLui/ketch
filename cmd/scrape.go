@@ -61,11 +61,10 @@ func runScrape(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	rw, err := urlrewrite.NewRewriter(cfg.URLRewrites)
+	scraper, err := newScraper()
 	if err != nil {
-		return fmt.Errorf("invalid url_rewrites: %w", err)
+		return err
 	}
-	scraper := scrape.NewWithRewriter(cfg.Browser, rw)
 	defer scraper.Close()
 
 	pc := newPageCache(noCache)
@@ -153,6 +152,16 @@ func readLinesFromFile(path string) ([]string, error) {
 	}
 	defer func() { _ = f.Close() }()
 	return readLines(f), nil
+}
+
+// newScraper builds a Scraper from cfg: compiled URL rewriter + optional
+// browser binary. Returned scraper must be Closed by the caller.
+func newScraper() (*scrape.Scraper, error) {
+	rw, err := urlrewrite.NewRewriter(cfg.URLRewrites)
+	if err != nil {
+		return nil, fmt.Errorf("invalid url_rewrites: %w", err)
+	}
+	return scrape.NewWithRewriter(cfg.Browser, rw), nil
 }
 
 // newPageCache creates a cache from config, or nil if disabled.
