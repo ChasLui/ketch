@@ -23,7 +23,6 @@ type Options struct {
 	Concurrency int      // worker pool size, default 8
 	Allow       []string // path substrings that URLs must contain (any match passes)
 	Deny        []string // regex patterns to reject URLs
-	BrowserBin  string   // browser binary for JS-rendered page fallback; empty = disabled
 }
 
 // Result represents a single crawled page.
@@ -51,7 +50,7 @@ type hostJSStats struct {
 // Crawl performs a BFS crawl from the seed URL, calling fn for each page.
 // The context bounds the entire crawl: cancelling it stops workers promptly
 // and aborts in-flight HTTP/browser requests.
-func Crawl(ctx context.Context, seed string, opts Options, pc *cache.Cache, sitemap bool, fn func(Result)) error {
+func Crawl(ctx context.Context, seed string, s *scrape.Scraper, opts Options, pc *cache.Cache, sitemap bool, fn func(Result)) error {
 	seedURL, err := url.Parse(seed)
 	if err != nil {
 		return fmt.Errorf("invalid seed URL: %w", err)
@@ -61,14 +60,6 @@ func Crawl(ctx context.Context, seed string, opts Options, pc *cache.Cache, site
 	if err != nil {
 		return err
 	}
-
-	var s *scrape.Scraper
-	if opts.BrowserBin != "" {
-		s = scrape.NewWithBrowser(opts.BrowserBin)
-	} else {
-		s = scrape.New()
-	}
-	defer s.Close()
 
 	c := &crawler{
 		ctx:       ctx,
@@ -153,7 +144,8 @@ func (c *crawler) run(seed string, sitemap bool) error {
 }
 
 func (c *crawler) enqueue(rawURL string, depth int, source string) {
-	norm := normalizeURL(rawURL)
+	rewritten := c.scraper.Rewrite(rawURL)
+	norm := normalizeURL(rewritten)
 	if norm == "" {
 		return
 	}
@@ -191,7 +183,8 @@ func (c *crawler) tryVisit(u string) bool {
 }
 
 func (c *crawler) processItem(item queueItem) {
-	cached, cachedSource := c.pc.Get(item.url)
+	cacheKey := c.scraper.Rewrite(item.url)
+	cached, cachedSource := c.pc.Get(cacheKey)
 
 	// Cache hit: use cached page, skip fetch entirely, unless the entry
 	// is an unrendered JS-shell extraction and a browser is now available.
@@ -240,7 +233,7 @@ func (c *crawler) processItem(item queueItem) {
 		return
 	}
 
-	c.pc.Put(item.url, page, fetchSource)
+	c.pc.Put(cacheKey, page, fetchSource)
 	c.fn(Result{
 		Page:   page,
 		Depth:  item.depth,

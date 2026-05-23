@@ -104,12 +104,18 @@ func runCrawlWorker(cmd *cobra.Command, args []string, crawlID string) error {
 
 	pc := newCrawlCache(noCache)
 	defer pc.Close()
+
+	scraper, err := newScraper()
+	if err != nil {
+		return err
+	}
+	defer scraper.Close()
+
 	opts := crawl.Options{
 		Depth:       depth,
 		Concurrency: concurrency,
 		Allow:       allow,
 		Deny:        deny,
-		BrowserBin:  cfg.Browser,
 	}
 
 	var mu sync.Mutex
@@ -135,7 +141,7 @@ func runCrawlWorker(cmd *cobra.Command, args []string, crawlID string) error {
 		}
 	}
 
-	crawlErr := crawl.Crawl(ctx, seed, opts, pc, sitemap, fn)
+	crawlErr := crawl.Crawl(ctx, seed, scraper, opts, pc, sitemap, fn)
 
 	// Write final status. Cancellation wins over the returned error: a
 	// ctx-cancelled crawl returns context.Canceled, which is "stopped",

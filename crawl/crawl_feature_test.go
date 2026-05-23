@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/1broseidon/ketch/scrape"
 )
 
 func TestFeatureNormalizeURL(t *testing.T) {
@@ -348,7 +350,9 @@ func TestCrawlSchedulerEndToEnd(t *testing.T) {
 
 	opts := Options{Depth: 5, Concurrency: 4}
 	// Use exported entry point to exercise the full wiring.
-	if err := Crawl(t.Context(), server.URL, opts, nil, false, fn); err != nil {
+	s := scrape.New()
+	defer s.Close()
+	if err := Crawl(t.Context(), server.URL, s, opts, nil, false, fn); err != nil {
 		t.Fatalf("Crawl error: %v", err)
 	}
 
@@ -383,7 +387,9 @@ func TestCrawlSchedulerCancels(t *testing.T) {
 	time.AfterFunc(50*time.Millisecond, cancel)
 
 	opts := Options{Depth: 3, Concurrency: 4}
-	err := Crawl(ctx, server.URL, opts, nil, false, func(Result) {})
+	s := scrape.New()
+	defer s.Close()
+	err := Crawl(ctx, server.URL, s, opts, nil, false, func(Result) {})
 	if err == nil {
 		t.Fatal("expected context error, got nil")
 	}

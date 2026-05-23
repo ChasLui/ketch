@@ -58,12 +58,17 @@ func runCrawl(cmd *cobra.Command, args []string) error {
 	pc := newCrawlCache(noCache)
 	defer pc.Close()
 
+	scraper, err := newScraper()
+	if err != nil {
+		return err
+	}
+	defer scraper.Close()
+
 	opts := crawl.Options{
 		Depth:       depth,
 		Concurrency: concurrency,
 		Allow:       allow,
 		Deny:        deny,
-		BrowserBin:  cfg.Browser,
 	}
 
 	var (
@@ -112,7 +117,7 @@ func runCrawl(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	err := crawl.Crawl(cmd.Context(), seed, opts, pc, sitemap, fn)
+	err = crawl.Crawl(cmd.Context(), seed, scraper, opts, pc, sitemap, fn)
 
 	duration := time.Since(start)
 	printCrawlSummary(seed, count, newCount, changed, unchanged, errCount, duration)
