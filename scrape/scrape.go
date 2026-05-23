@@ -39,6 +39,7 @@ const (
 // Page represents a scraped web page.
 type Page struct {
 	URL          string `json:"url"`
+	FetchedURL   string `json:"fetched_url,omitempty"`
 	Title        string `json:"title"`
 	Markdown     string `json:"markdown"`
 	ETag         string `json:"etag,omitempty"`
@@ -142,28 +143,36 @@ func (s *Scraper) getBrowser() BrowserConn {
 // and a browser is configured, automatically retries with the browser for full
 // content extraction.
 func (s *Scraper) Scrape(ctx context.Context, rawURL string) (*Page, string, error) {
-	body, err := s.Fetch(ctx, rawURL)
+	fetchURL := s.Rewrite(rawURL)
+
+	body, err := s.Fetch(ctx, fetchURL)
 	if err != nil {
 		return nil, "", err
 	}
 
-	body, source := s.MaybeBrowserFetch(ctx, rawURL, body)
+	body, source := s.MaybeBrowserFetch(ctx, fetchURL, body)
 
-	result, err := s.extractor.Extract(rawURL, body)
+	result, err := s.extractor.Extract(fetchURL, body)
 	if err != nil {
-		return nil, "", fmt.Errorf("extraction failed for %s: %w", rawURL, err)
+		return nil, "", fmt.Errorf("extraction failed for %s: %w", fetchURL, err)
 	}
 
-	return &Page{
+	p := &Page{
 		URL:      rawURL,
 		Title:    result.Title,
 		Markdown: result.Markdown,
-	}, source, nil
+	}
+	if fetchURL != rawURL {
+		p.FetchedURL = fetchURL
+	}
+	return p, source, nil
 }
 
 // ScrapeConditional fetches a URL with conditional headers and JS detection.
 func (s *Scraper) ScrapeConditional(ctx context.Context, rawURL, etag, lastModified string) (*FetchResult, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
+	fetchURL := s.Rewrite(rawURL)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", fetchURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +195,7 @@ func (s *Scraper) ScrapeConditional(ctx context.Context, rawURL, etag, lastModif
 		return &FetchResult{NotModified: true}, nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d for %s", resp.StatusCode, rawURL)
+		return nil, fmt.Errorf("HTTP %d for %s", resp.StatusCode, fetchURL)
 	}
 
 	b, err := io.ReadAll(io.LimitReader(resp.Body, MaxBodyBytes))
@@ -208,25 +217,30 @@ func (s *Scraper) ScrapeConditional(ctx context.Context, rawURL, etag, lastModif
 
 	source := SourceHTTP
 	if detection == "likely_shell" {
-		html, source = s.browserFetchOrWarn(ctx, rawURL, html)
+		html, source = s.browserFetchOrWarn(ctx, fetchURL, html)
 		doc = nil // rendered HTML needs a fresh parse downstream
 	}
 
-	result, err := s.extractor.Extract(rawURL, html)
+	result, err := s.extractor.Extract(fetchURL, html)
 	if err != nil {
-		return nil, fmt.Errorf("extraction failed for %s: %w", rawURL, err)
+		return nil, fmt.Errorf("extraction failed for %s: %w", fetchURL, err)
+	}
+
+	page := &Page{
+		URL:          rawURL,
+		Title:        result.Title,
+		Markdown:     result.Markdown,
+		ETag:         resp.Header.Get("ETag"),
+		LastModified: resp.Header.Get("Last-Modified"),
+		ContentHash:  ContentHash(result.Markdown),
+	}
+	if fetchURL != rawURL {
+		page.FetchedURL = fetchURL
 	}
 
 	return &FetchResult{
-		Doc: doc,
-		Page: &Page{
-			URL:          rawURL,
-			Title:        result.Title,
-			Markdown:     result.Markdown,
-			ETag:         resp.Header.Get("ETag"),
-			LastModified: resp.Header.Get("Last-Modified"),
-			ContentHash:  ContentHash(result.Markdown),
-		},
+		Doc:         doc,
+		Page:        page,
 		RawHTML:     html,
 		JSDetection: detection,
 		Source:      source,
@@ -240,19 +254,23 @@ func (s *Scraper) BrowserScrape(ctx context.Context, rawURL string) (*Page, stri
 	if browser == nil {
 		return nil, "", ErrNoBrowser
 	}
-	html, err := browser.Fetch(ctx, rawURL)
+	fetchURL := s.Rewrite(rawURL)
+	html, err := browser.Fetch(ctx, fetchURL)
 	if err != nil {
-		return nil, "", fmt.Errorf("browser fetch failed for %s: %w", rawURL, err)
+		return nil, "", fmt.Errorf("browser fetch failed for %s: %w", fetchURL, err)
 	}
-	result, err := s.extractor.Extract(rawURL, html)
+	result, err := s.extractor.Extract(fetchURL, html)
 	if err != nil {
-		return nil, "", fmt.Errorf("extraction failed for %s: %w", rawURL, err)
+		return nil, "", fmt.Errorf("extraction failed for %s: %w", fetchURL, err)
 	}
 	page := &Page{
 		URL:         rawURL,
 		Title:       result.Title,
 		Markdown:    result.Markdown,
 		ContentHash: ContentHash(result.Markdown),
+	}
+	if fetchURL != rawURL {
+		page.FetchedURL = fetchURL
 	}
 	return page, html, nil
 }
