@@ -6,6 +6,7 @@ import "context"
 type Result struct {
 	Title       string `json:"title"`
 	URL         string `json:"url"`
+	FetchedURL  string `json:"fetched_url,omitempty"`
 	Description string `json:"description,omitempty"`
 	Content     string `json:"content,omitempty"`
 }

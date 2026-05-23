@@ -95,6 +95,9 @@ func searchScrape(ctx context.Context, results []search.Result, scraper *scrape.
 				fmt.Fprintf(os.Stderr, "warn: failed to scrape %s: %v\n", r.URL, err)
 				continue
 			}
+			if page.FetchedURL != "" {
+				results[i].FetchedURL = page.FetchedURL
+			}
 			results[i].Content = postProcess(page.Markdown, trim, maxChars)
 		}
 		return json.NewEncoder(os.Stdout).Encode(results)
@@ -119,6 +122,9 @@ func searchScrape(ctx context.Context, results []search.Result, scraper *scrape.
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warn: failed to scrape %s: %v\n", r.URL, err)
 			continue
+		}
+		if page.FetchedURL != "" {
+			results[i].FetchedURL = page.FetchedURL
 		}
 		content := postProcess(page.Markdown, trim, maxChars)
 		if i > 0 {
