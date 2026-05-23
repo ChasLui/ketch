@@ -13,6 +13,7 @@ import (
 
 	"github.com/1broseidon/ketch/extract"
 	"github.com/1broseidon/ketch/httpx"
+	"github.com/1broseidon/ketch/urlrewrite"
 	"github.com/PuerkitoBio/goquery"
 )
 
@@ -70,29 +71,36 @@ type Scraper struct {
 	browserBin string
 	browserMu  sync.Mutex
 	browser    BrowserConn
+	rewriter   *urlrewrite.Rewriter
 }
 
-// New creates a Scraper with defaults.
-func New() *Scraper {
-	return &Scraper{
-		client:    httpx.Default(),
-		extractor: extract.New(),
-	}
-}
-
-// NewWithBrowser creates a Scraper with browser fallback for JS-rendered pages.
-func NewWithBrowser(browserBin string) *Scraper {
+// NewWithRewriter creates a Scraper with an optional browser binary and
+// optional URL rewriter. Pass "" for browserBin to disable browser fallback;
+// pass nil rewriter to disable URL rewriting.
+func NewWithRewriter(browserBin string, rw *urlrewrite.Rewriter) *Scraper {
 	return &Scraper{
 		client:     httpx.Default(),
 		extractor:  extract.New(),
 		browserBin: browserBin,
+		rewriter:   rw,
 	}
 }
+
+// New creates a Scraper with defaults.
+func New() *Scraper { return NewWithRewriter("", nil) }
+
+// NewWithBrowser creates a Scraper with browser fallback for JS-rendered pages.
+func NewWithBrowser(browserBin string) *Scraper { return NewWithRewriter(browserBin, nil) }
 
 // HasBrowser reports whether this scraper has browser fallback configured.
 func (s *Scraper) HasBrowser() bool {
 	return s.browserBin != ""
 }
+
+// Rewrite returns the URL after applying configured rewrite rules, or the
+// original URL if no rule matches or no rewriter is configured. Safe to
+// call on a Scraper with no rewriter (nil-safe via urlrewrite.Rewriter).
+func (s *Scraper) Rewrite(url string) string { return s.rewriter.Apply(url) }
 
 // Close releases browser resources if any.
 func (s *Scraper) Close() {
