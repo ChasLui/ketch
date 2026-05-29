@@ -14,11 +14,13 @@ Use `ketch` CLI for web search and page fetching.
 - Search + full content: `ketch search "query" --scrape` — fetches and extracts each result
 - Scrape: `ketch scrape <url>` — fetches a URL and returns clean markdown
 - Batch scrape: `ketch scrape <url1> <url2> ...` — concurrent fetch
+- Code search: `ketch code "query" --lang go` — real OSS code snippets
+- Library docs: `ketch docs "query" --library /org/repo` — library documentation
 - Crawl: `ketch crawl <url> --sitemap --background` — crawl a site, poll with `ketch crawl status`
 - JS-rendered pages are handled automatically — if a page returns a loading shell, ketch re-fetches it with a headless browser.
 - All commands support `--json` for structured output.
-- Discovery: `ketch config` — returns effective config and available backends as JSON.
-- The operator has already configured the search backend and browser. Do not override unless you have a specific reason.
+- Discovery: `ketch config` — returns effective config plus available search, code, and docs backends as JSON.
+- The operator has already configured the backends and browser. Do not override unless you have a specific reason.
 ```
 
 ## Why This Works
@@ -77,6 +79,12 @@ ketch scrape https://help.example.com/s/article/1234
   "limit": 5,
   "cache_ttl": "72h",
   "browser": "chrome",
-  "available_backends": ["brave", "ddg", "searxng"]
+  "code_backend": "grepapp",
+  "docs_backend": "context7",
+  "sourcegraph_url": "https://sourcegraph.com",
+  "github_token_source": "none",
+  "available_backends": ["brave", "ddg", "searxng"],
+  "available_code_backends": ["grepapp", "sourcegraph", "github"],
+  "available_doc_backends": ["context7", "local"]
 }
 ```

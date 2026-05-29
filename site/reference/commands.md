@@ -70,7 +70,7 @@ ketch docs <query> [flags]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--backend, -b` | `context7` | Docs backend: `context7`, `local` |
+| `--backend, -b` | `context7` | Docs backend: `context7`, `local` (not yet implemented) |
 | `--limit, -l` | `5` | Max number of results |
 | `--library` | — | Context7 library ID (skip resolve step) |
 | `--resolve` | `false` | Resolve library name instead of searching |
@@ -92,6 +92,16 @@ Fetch URLs and extract clean markdown.
 ```sh
 ketch scrape <url> [urls...] [flags]
 ```
+
+**Input forms** (auto-detected, no flag needed):
+
+- Single URL: `ketch scrape https://example.com`
+- Multiple args: `ketch scrape url1 url2 url3`
+- JSON array: `ketch scrape '["url1","url2"]'`
+- File (one URL per line): `ketch scrape urls.txt`
+- Stdin pipe: `cat urls.txt | ketch scrape`
+
+Explicit args take priority over stdin, so `ketch scrape url < file` uses the URL.
 
 **Flags:**
 
@@ -225,3 +235,18 @@ ketch version       # or: ketch --version
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--json` | `false` | Output as JSON instead of YAML frontmatter + markdown |
+
+## Exit Codes
+
+ketch returns differentiated exit codes so scripts and agents can distinguish
+failure classes:
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Unclassified error |
+| `2` | Validation / bad input (missing arg, unknown backend, unknown config key, unparseable value) |
+| `3` | Not found (missing crawl ID, `--select` with no matches) |
+| `4` | Upstream / network failure (scrape, search, code, docs, or crawl fetch) |
+| `5` | Precondition (missing API key/token, `config init` when file exists) |
+| `6` | Interrupted (SIGINT/SIGTERM during a foreground crawl) |

@@ -6,7 +6,9 @@ Fast, stateless CLI for agentic web search and scrape. Single Go binary, no daem
 
 See [AGENTS.md](AGENTS.md) for full module layout and design principles.
 
-- `cmd/` — Cobra CLI (root, search, scrape, crawl, config, cache, browser)
+- `cmd/` — Cobra CLI (root, search, code, docs, scrape, crawl, config, cache, browser, version)
+- `code/` — `code.Searcher` interface with Grep (default), Sourcegraph, and GitHub backends
+- `docs/` — `docs.Searcher` interface with Context7 backend (local FTS5 planned)
 - `search/` — `Searcher` interface with Brave (default), DDG, and SearXNG backends
 - `scrape/` — HTTP fetch + browser fallback via Rod for JS-rendered pages
 - `extract/` — readability + html-to-markdown pipeline, JS shell detection heuristic

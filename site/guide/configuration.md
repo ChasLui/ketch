@@ -21,10 +21,19 @@ The discovery payload:
   "searxng_url": "http://localhost:8081",
   "limit": 5,
   "cache_ttl": "72h",
-  "browser": "chrome",
-  "available_backends": ["brave", "ddg", "searxng"]
+  "code_backend": "grepapp",
+  "docs_backend": "context7",
+  "sourcegraph_url": "https://sourcegraph.com",
+  "github_token_source": "none",
+  "available_backends": ["brave", "ddg", "searxng"],
+  "available_code_backends": ["grepapp", "sourcegraph", "github"],
+  "available_doc_backends": ["context7", "local"]
 }
 ```
+
+`browser` is included only when set. `github_token_source` reports where the
+GitHub token was resolved from (`config`, `env`, `gh-cli`, or `none`) — the
+token itself is never printed. `url_rewrites` appears only when configured.
 
 ## Setting Values
 
@@ -35,18 +44,57 @@ ketch config set searxng_url http://my-searxng:8080
 ketch config set limit 10
 ketch config set cache_ttl 4h
 ketch config set browser chrome
+ketch config set code_backend sourcegraph
+ketch config set docs_backend context7
+ketch config set context7_api_key ctx7...
+ketch config set github_token ghp_...
 ```
 
 ## Config Keys
 
+### Web Search
+
 | Key | Default | Description |
 |-----|---------|-------------|
-| `backend` | `brave` | Default search backend |
+| `backend` | `brave` | Default search backend: `brave`, `ddg`, `searxng` |
 | `brave_api_key` | — | Brave Search API key ([get one free](https://brave.com/search/api/)) |
 | `searxng_url` | `http://localhost:8081` | SearXNG instance URL |
-| `limit` | `5` | Default max search results |
-| `cache_ttl` | `72h` | How long scraped pages stay cached |
+| `limit` | `5` | Default max results (shared by `search`, `code`, `docs`) |
+
+### Code & Docs Search
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `code_backend` | `grepapp` | Default `ketch code` backend: `grepapp`, `sourcegraph`, `github` |
+| `docs_backend` | `context7` | Default `ketch docs` backend: `context7`, `local` |
+| `sourcegraph_url` | `https://sourcegraph.com` | Sourcegraph instance URL (for self-hosted) |
+| `context7_api_key` | — | Context7 API key (required for `ketch docs`) |
+| `github_token` | — | GitHub token for `ketch code -b github` (or use `$GITHUB_TOKEN` / `gh auth`) |
+
+### Scraping & Cache
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `cache_ttl` | `72h` | How long scraped pages stay cached (Go duration, e.g. `30m`, `4h`) |
 | `browser` | — | Browser for JS-rendered pages: `chrome`, `chromium`, or absolute path |
+| `url_rewrites` | — | Ordered regex rewrite rules applied before every fetch (see below) |
+
+Secrets (`brave_api_key`, `context7_api_key`, `github_token`) are stored in
+plaintext in `config.json`; protect the file accordingly.
+
+## URL Rewrites
+
+`url_rewrites` is an ordered list of `{match, replace}` regex rules applied
+transparently before any fetch in `scrape`, `search --scrape`, and `crawl`.
+Use it to redirect URLs without touching the agent surface — for example,
+routing Reddit links to the old UI:
+
+```sh
+ketch config set url_rewrites '[{"match":"www.reddit.com","replace":"old.reddit.com"}]'
+```
+
+The original URL is preserved in output as `url:`; the fetched URL appears as
+`fetched_url:` when it differs. Rules are applied in order.
 
 ## Browser Rendering
 

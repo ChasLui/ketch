@@ -1,5 +1,5 @@
 <script setup>
-import { useData } from 'vitepress'
+import { useData, withBase } from 'vitepress'
 const { theme } = useData()
 
 const features = [
@@ -17,7 +17,7 @@ const features = [
   },
   {
     title: 'Page Cache',
-    description: 'Scraped pages cached locally with TTL-based expiry. Second fetch of the same URL returns in ~5ms instead of ~200ms. Cache follows platform conventions.',
+    description: 'Scraped pages cached locally with TTL-based expiry. Re-fetching the same URL serves from cache until the TTL lapses. Cache follows platform conventions.',
   },
   {
     title: 'Zero Dependencies',
@@ -64,7 +64,7 @@ const features = [
 
       <!-- Actions -->
       <div class="actions">
-        <a href="/ketch/guide/getting-started" class="action-primary">Get Started</a>
+        <a :href="withBase('/guide/getting-started')" class="action-primary">Get Started</a>
         <a href="https://github.com/1broseidon/ketch" target="_blank" rel="noopener" class="action-secondary">View Source</a>
       </div>
     </main>
