@@ -1,6 +1,10 @@
-# Search Backends
+# Backends
 
-ketch supports three search backends. Set the default with `ketch config set backend <name>`.
+ketch has three search surfaces, each with its own backends: web search (`ketch search`), code search (`ketch code`), and library docs (`ketch docs`).
+
+## Web Search Backends
+
+ketch supports three web-search backends. Set the default with `ketch config set backend <name>`.
 
 ## Brave (default)
 
@@ -43,3 +47,43 @@ ketch config set searxng_url http://localhost:8081
 ```
 
 **Recommended for:** operators running agents that search frequently, or anyone who wants full control over their search infrastructure.
+
+## Code Search Backends
+
+`ketch code` searches real source code across open-source repositories. Set the default with `ketch config set code_backend <name>`.
+
+### Grep (default)
+
+The Grep MCP server (`mcp.grep.app`) — literal or regex search over 1M+ public GitHub repos. Zero config, no token.
+
+**Setup:** None — works out of the box.
+
+Use `--regex` to interpret the query as a regular expression.
+
+### Sourcegraph
+
+Grep-style search across ~1M OSS repos with exact line matches over an SSE stream. Results are filtered to non-archived, non-fork repos by default. Supports `--regex`.
+
+**Setup:** None for the public instance. For a self-hosted instance: `ketch config set sourcegraph_url <url>`.
+
+### GitHub
+
+GitHub Code Search (REST `/search/code`) with a batched GraphQL call for star counts.
+
+**Setup:** A token is required. Resolution chain: `ketch config set github_token <tok>` → `$GITHUB_TOKEN` → `$GH_TOKEN` → `gh auth token` (if the `gh` CLI is installed).
+
+**Limits:** 30 requests/minute. Token must have `repo` scope.
+
+## Docs Backends
+
+`ketch docs` fetches library documentation. Set the default with `ketch config set docs_backend <name>`.
+
+### Context7 (default)
+
+Curated, version-aware documentation snippets.
+
+**Setup:** Free key: `ketch config set context7_api_key <key>`.
+
+### Local
+
+A planned FTS5 SQLite backend for offline/private docs. Not yet implemented.

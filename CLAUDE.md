@@ -62,11 +62,14 @@ Use --concurrency N (default 5) to control parallel request limit.
 
 | Backend | Setup | Notes |
 |---------|-------|-------|
-| `sourcegraph` (default) | Zero config | Grep-style, ~1M OSS repos, exact line matches, SSE stream |
+| `grepapp` (default) | Zero config | Grep MCP (`mcp.grep.app`), no token, literal/regex over 1M+ public repos |
+| `sourcegraph` | Zero config | Grep-style, ~1M OSS repos, exact line matches, SSE stream |
+| `github` | `gh auth login` or `ketch config set github_token <tok>` | REST `/search/code` + GraphQL stars batch, 30 req/min |
 
 ```bash
 ketch code "http.NewRequestWithContext" --lang go
-ketch code "rate limit middleware" --lang go --limit 10
+ketch code "NewRequestWith.*Context" --regex
+ketch code "rate limit middleware" --lang go -b github --limit 10
 ketch config set sourcegraph_url https://sourcegraph.com  # optional, for self-hosted
 ```
 
@@ -75,7 +78,7 @@ ketch config set sourcegraph_url https://sourcegraph.com  # optional, for self-h
 | Backend | Setup | Notes |
 |---------|-------|-------|
 | `context7` (default) | Free key: `ketch config set context7_api_key <key>` | Curated snippets + prose, version-aware |
-| `local` | `ketch docs index <source>` | FTS5 SQLite, offline/private docs (planned) |
+| `local` | _planned_ | FTS5 SQLite for offline/private docs (not yet implemented) |
 
 ```bash
 ketch config set context7_api_key ctx7sk_...
@@ -169,6 +172,4 @@ GoReleaser + GitHub Actions (`.goreleaser.yaml`, `.github/workflows/release.yml`
 
 ### What's Next
 
-1. Unit tests for extract, search, code, docs, and cache packages
-2. `--raw` flag implementation in scrape command
-3. Local FTS5 SQLite docs backend (`ketch docs index`) for offline/private docs
+1. Local FTS5 SQLite docs backend (`-b local`) for offline/private docs
