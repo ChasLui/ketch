@@ -59,11 +59,16 @@ type sseLineMatch struct {
 	LineNumber int    `json:"lineNumber"`
 }
 
-// Search queries Sourcegraph and returns up to limit code results.
-func (s *Sourcegraph) Search(ctx context.Context, query, lang string, limit int) ([]Result, error) {
-	full := s.buildQuery(query, lang)
+// Search queries Sourcegraph and returns up to q.Limit code results.
+// Sourcegraph defaults to literal matching; regex is requested via the
+// patterntype:regexp qualifier.
+func (s *Sourcegraph) Search(ctx context.Context, q Query) ([]Result, error) {
+	full := s.buildQuery(q.Term, q.Lang)
+	if q.Regexp {
+		full += " patterntype:regexp"
+	}
 	u := fmt.Sprintf("%s/.api/search/stream?q=%s&display=%d",
-		s.baseURL, url.QueryEscape(full), limit)
+		s.baseURL, url.QueryEscape(full), q.Limit)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
@@ -81,7 +86,7 @@ func (s *Sourcegraph) Search(ctx context.Context, query, lang string, limit int)
 		return nil, fmt.Errorf("sourcegraph returned status %d", resp.StatusCode)
 	}
 
-	return s.parseSSE(resp, limit)
+	return s.parseSSE(resp, q.Limit)
 }
 
 func (s *Sourcegraph) parseSSE(resp *http.Response, limit int) ([]Result, error) {

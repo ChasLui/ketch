@@ -57,13 +57,18 @@ type ghMatchRange struct {
 	Text    string `json:"text"`
 }
 
-// Search queries GitHub Code Search and returns up to limit results.
-func (g *GitHub) Search(ctx context.Context, query, lang string, limit int) ([]Result, error) {
+// Search queries GitHub Code Search and returns up to q.Limit results.
+// GitHub's /search/code REST API does not support regular expressions
+// (only literal terms plus qualifiers), so regex requests are rejected.
+func (g *GitHub) Search(ctx context.Context, q Query) ([]Result, error) {
 	if g.token == "" {
 		return nil, fmt.Errorf("github: token required")
 	}
+	if q.Regexp {
+		return nil, ErrRegexpUnsupported
+	}
 
-	sr, err := g.searchCode(ctx, g.buildQuery(query, lang), limit)
+	sr, err := g.searchCode(ctx, g.buildQuery(q.Term, q.Lang), q.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +91,7 @@ func (g *GitHub) Search(ctx context.Context, query, lang string, limit int) ([]R
 		if item.Repository.NodeID != "" {
 			nodeIDs = append(nodeIDs, item.Repository.NodeID)
 		}
-		if len(results) >= limit {
+		if len(results) >= q.Limit {
 			break
 		}
 	}

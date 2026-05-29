@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -14,7 +15,7 @@ import (
 var codeCmd = &cobra.Command{
 	Use:   "code <query>",
 	Short: "Search code across open-source repositories",
-	Long:  `Search code using Sourcegraph (default) or GitHub Code Search. Supports language filtering and per-backend query qualifiers.`,
+	Long:  `Search code using Grep (default; mcp.grep.app, no token, literal/regex over 1M+ public repos), Sourcegraph, or GitHub Code Search. Supports language filtering and per-backend query qualifiers.`,
 	Args:  exitArgs(cobra.MinimumNArgs(1)),
 	RunE:  runCode,
 }
@@ -23,6 +24,7 @@ func init() {
 	rootCmd.AddCommand(codeCmd)
 	codeCmd.Flags().StringP("backend", "b", cfg.CodeBackend, "code search backend: "+strings.Join(config.AvailableCodeBackends(), ", "))
 	codeCmd.Flags().String("lang", "", "language filter (appended to query)")
+	codeCmd.Flags().Bool("regex", false, "interpret query as a regular expression (grepapp, sourcegraph)")
 	codeCmd.Flags().IntP("limit", "l", cfg.Limit, "max number of results")
 	codeCmd.Flags().Bool("minimal", false, "one result per line, tab-separated (url/repo/snippet)")
 }
@@ -32,6 +34,7 @@ func runCode(cmd *cobra.Command, args []string) error {
 	backend, _ := cmd.Flags().GetString("backend")
 	lang, _ := cmd.Flags().GetString("lang")
 	limit, _ := cmd.Flags().GetInt("limit")
+	regex, _ := cmd.Flags().GetBool("regex")
 	asJSON, _ := cmd.Root().PersistentFlags().GetBool("json")
 	minimal, _ := cmd.Flags().GetBool("minimal")
 
@@ -40,8 +43,16 @@ func runCode(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	results, err := searcher.Search(cmd.Context(), query, lang, limit)
+	results, err := searcher.Search(cmd.Context(), code.Query{
+		Term:   query,
+		Lang:   lang,
+		Limit:  limit,
+		Regexp: regex,
+	})
 	if err != nil {
+		if errors.Is(err, code.ErrRegexpUnsupported) {
+			return exitErrf(ExitPrecondition, "backend %q does not support --regex (try -b grepapp or -b sourcegraph)", backend)
+		}
 		return exitErrf(ExitUpstream, "code search failed: %w", err)
 	}
 
@@ -87,6 +98,8 @@ func newCodeSearcher(backend string) (code.Searcher, error) {
 	switch backend {
 	case "sourcegraph":
 		return code.NewSourcegraph(cfg.SourcegraphURL), nil
+	case "grepapp":
+		return code.NewGrepApp(), nil
 	case "github":
 		token, source := cfg.ResolveGithubToken()
 		if token == "" {

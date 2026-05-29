@@ -61,7 +61,7 @@ func Defaults() Config {
 		SearxngURL:     "http://localhost:8081",
 		Limit:          5,
 		CacheTTL:       "72h",
-		CodeBackend:    "sourcegraph",
+		CodeBackend:    "grepapp",
 		DocsBackend:    "context7",
 		SourcegraphURL: "https://sourcegraph.com",
 	}
@@ -73,7 +73,7 @@ func AvailableBackends() []string {
 }
 
 // AvailableCodeBackends returns the list of known code search backends.
-func AvailableCodeBackends() []string { return []string{"sourcegraph", "github"} }
+func AvailableCodeBackends() []string { return []string{"grepapp", "sourcegraph", "github"} }
 
 // AvailableDocBackends returns the list of known docs backends.
 func AvailableDocBackends() []string { return []string{"context7", "local"} }
