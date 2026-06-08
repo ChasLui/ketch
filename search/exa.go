@@ -75,15 +75,9 @@ func (e *EXA) Search(ctx context.Context, query string, limit int) ([]Result, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to read exa response: %w", err)
 	}
-	var payload string
-	for line := range strings.SplitSeq(string(raw), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "data:") {
-			payload = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		}
-	}
-	if payload == "" {
-		return nil, fmt.Errorf("exa response contained no data payload")
+	payload, err := extractSSEPayload(raw)
+	if err != nil {
+		return nil, err
 	}
 
 	var parsed struct {
@@ -111,6 +105,36 @@ func (e *EXA) Search(ctx context.Context, query string, limit int) ([]Result, er
 	return results, nil
 }
 
+// extractSSEPayload scans raw SSE bytes and returns the last non-empty data:
+// payload. Exa sends a single frame with the full result, but earlier lines
+// may carry keep-alive or event-type markers with no JSON content.
+func extractSSEPayload(raw []byte) (string, error) {
+	var payload string
+	for line := range strings.SplitSeq(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "data:") {
+			if v := strings.TrimSpace(strings.TrimPrefix(line, "data:")); v != "" {
+				payload = v
+			}
+		}
+	}
+	if payload == "" {
+		return "", fmt.Errorf("exa response contained no data payload")
+	}
+	return payload, nil
+}
+
+// knownEXAPrefix returns true for metadata lines that Exa emits as labels
+// rather than content (e.g. "Title:", "URL:", "Highlights:", "Published date:").
+func knownEXAPrefix(line string) bool {
+	for _, prefix := range []string{"Title:", "URL:", "Highlights:", "Published date:", "Author:", "Score:"} {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // parseContent converts Exa's text-formatted MCP search output into structured
 // results. Exa returns result blocks separated by "---", with metadata lines
 // such as "Title:" and "URL:" followed by highlight text. This parser extracts
@@ -131,7 +155,7 @@ func parseContent(rawContent string, limit int) []Result {
 				result.Title = strings.TrimSpace(strings.TrimPrefix(line, "Title:"))
 			case strings.HasPrefix(line, "URL:"):
 				result.URL = strings.TrimSpace(strings.TrimPrefix(line, "URL:"))
-			case line != "" && !strings.Contains(line, ":"):
+			case line != "" && !knownEXAPrefix(line):
 				contentLines = append(contentLines, line)
 				if result.Description == "" {
 					result.Description = line

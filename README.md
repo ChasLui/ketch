@@ -278,7 +278,7 @@ Use `ketch` CLI for all external research — web pages, OSS code, library docs.
 
 ### Why this works
 
-An agent calling a web search API typically needs to know which provider to use, manage API keys, and handle provider-specific response formats. ketch collapses that: the operator runs `ketch config set backend exa` (or `ketch config set code_backend github`, `ketch config set docs_backend context7`) once, and every agent invocation uses the right backend automatically. The agent's system prompt doesn't mention backends at all — it just says "use ketch."
+An agent calling a web search API typically needs to know which provider to use, manage API keys, and handle provider-specific response formats. ketch collapses that: the operator runs `ketch config set backend searxng` (or `ketch config set code_backend github`, `ketch config set docs_backend context7`) once, and every agent invocation uses the right backend automatically. The agent's system prompt doesn't mention backends at all — it just says "use ketch."
 
 `ketch config` returns the full discovery payload as JSON — including which search, code, and docs backends are active and which token source is in effect — so an agent that needs to inspect capabilities can do so in one call without parsing help text.
 
