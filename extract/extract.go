@@ -8,7 +8,24 @@ import (
 	"github.com/PuerkitoBio/goquery"
 
 	readability "codeberg.org/readeck/go-readability/v2"
-	md "github.com/JohannesKaufmann/html-to-markdown/v2"
+	"github.com/JohannesKaufmann/html-to-markdown/v2/converter"
+	"github.com/JohannesKaufmann/html-to-markdown/v2/plugin/base"
+	"github.com/JohannesKaufmann/html-to-markdown/v2/plugin/commonmark"
+	"github.com/JohannesKaufmann/html-to-markdown/v2/plugin/table"
+)
+
+var markdownConverter = converter.NewConverter(
+	converter.WithPlugins(
+		base.NewBasePlugin(),
+		commonmark.NewCommonmarkPlugin(),
+		table.NewTablePlugin(
+			table.WithNewlineBehavior(table.NewlineBehaviorPreserve),
+			table.WithHeaderPromotion(true),
+			table.WithSkipEmptyRows(true),
+			table.WithCellPaddingBehavior(table.CellPaddingBehaviorNone),
+			table.WithSpanCellBehavior(table.SpanBehaviorEmpty),
+		),
+	),
 )
 
 // Result holds extracted content from a page.
@@ -40,11 +57,18 @@ func (e *Extractor) Extract(pageURL, html string) (*Result, error) {
 	if err == nil {
 		var buf bytes.Buffer
 		if renderErr := article.RenderHTML(&buf); renderErr == nil {
-			markdown, convErr := md.ConvertString(buf.String())
-			if convErr == nil && strings.TrimSpace(markdown) != "" {
+			markdown, convErr := markdownConverter.ConvertString(buf.String())
+			markdown = strings.TrimSpace(markdown)
+			if convErr == nil && markdown != "" {
+				if raw, ok := rawTableFallback(html, markdown); ok {
+					if title := article.Title(); title != "" {
+						raw.Title = title
+					}
+					return raw, nil
+				}
 				return &Result{
 					Title:    article.Title(),
-					Markdown: strings.TrimSpace(markdown),
+					Markdown: markdown,
 				}, nil
 			}
 		}
@@ -54,12 +78,30 @@ func (e *Extractor) Extract(pageURL, html string) (*Result, error) {
 	return extractRaw(html)
 }
 
+func rawTableFallback(html, markdown string) (*Result, bool) {
+	if !strings.Contains(strings.ToLower(html), "<table") || hasPipeTable(markdown) {
+		return nil, false
+	}
+	raw, err := extractRaw(html)
+	if err != nil || !hasPipeTable(raw.Markdown) {
+		return nil, false
+	}
+	return raw, true
+}
+
+func hasPipeTable(markdown string) bool {
+	return strings.HasPrefix(markdown, "|---") ||
+		strings.HasPrefix(markdown, "|:--") ||
+		strings.Contains(markdown, "\n|---") ||
+		strings.Contains(markdown, "\n|:--")
+}
+
 // extractRaw converts the full HTML to markdown without readability.
 // Noisier output (includes nav, footer, etc.) but never fails on valid HTML.
 func extractRaw(html string) (*Result, error) {
 	title := Title(html)
 
-	markdown, err := md.ConvertString(html)
+	markdown, err := markdownConverter.ConvertString(html)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +149,7 @@ func ExtractSelector(rawHTML, selector string) (string, error) {
 	}
 
 	html := strings.Join(parts, "\n\n")
-	markdown, err := md.ConvertString(html)
+	markdown, err := markdownConverter.ConvertString(html)
 	if err != nil {
 		return "", err
 	}

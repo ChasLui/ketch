@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Tables now render as GFM pipe tables across readability, raw, and selector extraction paths via a shared `base` + `commonmark` + `table` Markdown converter. The table converter promotes header rows, preserves cell newlines, emits empty cells for spans, and skips empty rows; readability extraction now falls back to coarse raw-page conversion when readability drops a table that the raw conversion can render (#14).
 - Brave searches now cap the API `count` parameter at Brave's current per-request maximum of 20, preventing HTTP 422 responses when `ketch search --limit` is set higher than Brave accepts (#17). Brave non-200 errors now include the response body so upstream validation failures identify the rejected parameter.
 
 ## [0.9.4] - 2026-06-22
