@@ -54,6 +54,43 @@ func TestFeatureBraveSearchParses(t *testing.T) {
 	}
 }
 
+func TestFeatureBraveRequestShape(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/res/v1/web/search" {
+			t.Errorf("path = %q, want /res/v1/web/search", got)
+		}
+		q := r.URL.Query()
+		if got := q.Get("q"); got != "test query" {
+			t.Errorf("q = %q, want test query", got)
+		}
+		if got := q.Get("count"); got != "5" {
+			t.Errorf("count = %q, want 5", got)
+		}
+		if got := q.Get("text_decorations"); got != "false" {
+			t.Errorf("text_decorations = %q, want false", got)
+		}
+		if got := q.Get("result_filter"); got != "web" {
+			t.Errorf("result_filter = %q, want web", got)
+		}
+		if got := r.Header.Get("Accept"); got != "application/json" {
+			t.Errorf("Accept = %q, want application/json", got)
+		}
+		if got := r.Header.Get("X-Subscription-Token"); got != "key" {
+			t.Errorf("X-Subscription-Token = %q, want key", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"web":{"results":[{"title":"A","url":"https://a.com","description":"a"}]}}`)
+	}))
+	defer server.Close()
+
+	b := &Brave{apiKey: "key", client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	_, err := b.Search(context.Background(), "test query", 5)
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+}
+
 func TestFeatureBraveSearch401(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +134,35 @@ func TestFeatureBraveLimitRespected(t *testing.T) {
 	}
 	if len(results) != 2 {
 		t.Errorf("got %d results, want 2 (limit)", len(results))
+	}
+}
+
+func TestFeatureBraveLimitCappedToAPIMax(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("count"); got != "20" {
+			http.Error(w, "count must be <= 20", http.StatusUnprocessableEntity)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"web":{"results":[`)
+		for i := 1; i <= 21; i++ {
+			if i > 1 {
+				fmt.Fprint(w, `,`)
+			}
+			fmt.Fprintf(w, `{"title":"%d","url":"https://example.com/%d","description":"%d"}`, i, i, i)
+		}
+		fmt.Fprint(w, `]}}`)
+	}))
+	defer server.Close()
+
+	b := &Brave{apiKey: "key", client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	results, err := b.Search(context.Background(), "test", 50)
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if len(results) != 20 {
+		t.Errorf("got %d results, want Brave API max 20", len(results))
 	}
 }
 

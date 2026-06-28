@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/1broseidon/ketch/httpx"
 )
@@ -36,10 +38,17 @@ type braveResult struct {
 	Description string `json:"description"`
 }
 
+const braveMaxCount = 20
+
 // Search queries Brave and returns up to limit results.
 func (b *Brave) Search(ctx context.Context, query string, limit int) ([]Result, error) {
+	count := braveRequestCount(limit)
+	if count == 0 {
+		return []Result{}, nil
+	}
+
 	u := fmt.Sprintf("https://api.search.brave.com/res/v1/web/search?q=%s&count=%d&text_decorations=false&result_filter=web",
-		url.QueryEscape(query), limit)
+		url.QueryEscape(query), count)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
@@ -61,7 +70,7 @@ func (b *Brave) Search(ctx context.Context, query string, limit int) ([]Result, 
 		return nil, fmt.Errorf("brave: rate limited")
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("brave returned status %d", resp.StatusCode)
+		return nil, braveStatusError(resp)
 	}
 
 	var br braveResponse
@@ -69,9 +78,9 @@ func (b *Brave) Search(ctx context.Context, query string, limit int) ([]Result, 
 		return nil, fmt.Errorf("failed to decode brave response: %w", err)
 	}
 
-	results := make([]Result, 0, limit)
+	results := make([]Result, 0, count)
 	for _, r := range br.Web.Results {
-		if len(results) >= limit {
+		if len(results) >= count {
 			break
 		}
 		results = append(results, Result{
@@ -82,4 +91,22 @@ func (b *Brave) Search(ctx context.Context, query string, limit int) ([]Result, 
 	}
 
 	return results, nil
+}
+
+func braveRequestCount(limit int) int {
+	if limit <= 0 {
+		return 0
+	}
+	if limit > braveMaxCount {
+		return braveMaxCount
+	}
+	return limit
+}
+
+func braveStatusError(resp *http.Response) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if detail := strings.TrimSpace(string(body)); detail != "" {
+		return fmt.Errorf("brave returned status %d: %s", resp.StatusCode, detail)
+	}
+	return fmt.Errorf("brave returned status %d", resp.StatusCode)
 }

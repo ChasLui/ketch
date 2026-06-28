@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Brave searches now cap the API `count` parameter at Brave's current per-request maximum of 20, preventing HTTP 422 responses when `ketch search --limit` is set higher than Brave accepts (#17). Brave non-200 errors now include the response body so upstream validation failures identify the rejected parameter.
+
 ## [0.9.4] - 2026-06-22
 
 ### Added
