@@ -69,6 +69,7 @@ type FetchResult struct {
 type Scraper struct {
 	client     *http.Client
 	extractor  *extract.Extractor
+	detector   *extract.Detector
 	browserBin string
 	browserMu  sync.Mutex
 	browser    BrowserConn
@@ -77,14 +78,26 @@ type Scraper struct {
 
 // NewWithRewriter creates a Scraper with an optional browser binary and
 // optional URL rewriter. Pass "" for browserBin to disable browser fallback;
-// pass nil rewriter to disable URL rewriting.
+// pass nil rewriter to disable URL rewriting. The detector uses only the
+// built-in SPA markers; use NewWithConfig to add operator-configured markers.
 func NewWithRewriter(browserBin string, rw *urlrewrite.Rewriter) *Scraper {
 	return &Scraper{
 		client:     httpx.Default(),
 		extractor:  extract.New(),
+		detector:   extract.NewDetector(nil),
 		browserBin: browserBin,
 		rewriter:   rw,
 	}
+}
+
+// NewWithConfig creates a Scraper like NewWithRewriter but folds operator-
+// configured SPA markers (config spa_markers) into the JS-shell detector in
+// addition to the built-in markers. Pass nil/empty spaMarkers for built-ins
+// only.
+func NewWithConfig(browserBin string, rw *urlrewrite.Rewriter, spaMarkers []string) *Scraper {
+	s := NewWithRewriter(browserBin, rw)
+	s.detector = extract.NewDetector(spaMarkers)
+	return s
 }
 
 // New creates a Scraper with defaults.
@@ -222,7 +235,7 @@ func (s *Scraper) ScrapeConditional(ctx context.Context, rawURL, etag, lastModif
 	if parseErr != nil {
 		detection = "ambiguous"
 	} else {
-		detection = extract.DetectJSShellFromDoc(doc, html)
+		detection = s.detector.DetectJSShellFromDoc(doc, html)
 	}
 
 	source := SourceHTTP
@@ -288,7 +301,7 @@ func (s *Scraper) BrowserScrape(ctx context.Context, rawURL string) (*Page, stri
 // MaybeBrowserFetch re-fetches rawURL via the browser if html looks JS-rendered.
 // Returns the (possibly rendered) html and the fetch source actually used.
 func (s *Scraper) MaybeBrowserFetch(ctx context.Context, rawURL, html string) (string, string) {
-	detection := extract.DetectJSShell(html)
+	detection := s.detector.DetectJSShell(html)
 	if detection != "likely_shell" {
 		return html, SourceHTTP
 	}

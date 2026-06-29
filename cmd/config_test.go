@@ -63,3 +63,52 @@ func TestApplyConfigSetUnknownKey(t *testing.T) {
 		t.Fatalf("want unknown-key error")
 	}
 }
+
+func TestApplyConfigSetSPAMarkersValid(t *testing.T) {
+	c := config.Defaults()
+	err := applyConfigSet(&c, "spa_markers", `["__next_f","data-v-app"]`)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if len(c.SPAMarkers) != 2 {
+		t.Fatalf("want 2 markers, got %d", len(c.SPAMarkers))
+	}
+	if c.SPAMarkers[0] != "__next_f" || c.SPAMarkers[1] != "data-v-app" {
+		t.Errorf("markers mismatch: %v", c.SPAMarkers)
+	}
+}
+
+func TestApplyConfigSetSPAMarkersInvalidJSON(t *testing.T) {
+	c := config.Defaults()
+	err := applyConfigSet(&c, "spa_markers", `not json`)
+	if err == nil {
+		t.Fatalf("want JSON parse error")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "json") {
+		t.Errorf("error should mention JSON, got: %v", err)
+	}
+}
+
+func TestApplyConfigSetSPAMarkersRejectsBlank(t *testing.T) {
+	c := config.Defaults()
+	err := applyConfigSet(&c, "spa_markers", `["__next_f","  "]`)
+	if err == nil {
+		t.Fatalf("want blank-marker error")
+	}
+}
+
+func TestApplyConfigSetSPAMarkersEmptyClears(t *testing.T) {
+	c := config.Defaults()
+	if err := applyConfigSet(&c, "spa_markers", `["__next_f"]`); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if len(c.SPAMarkers) != 1 {
+		t.Fatalf("setup failed: %d markers", len(c.SPAMarkers))
+	}
+	if err := applyConfigSet(&c, "spa_markers", `[]`); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if len(c.SPAMarkers) != 0 {
+		t.Errorf("want empty list after [] reset, got %d markers", len(c.SPAMarkers))
+	}
+}

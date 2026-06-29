@@ -181,7 +181,7 @@ func newScraper() (*scrape.Scraper, error) {
 	if err != nil {
 		return nil, exitErrf(ExitPrecondition, "invalid url_rewrites: %w", err)
 	}
-	return scrape.NewWithRewriter(cfg.Browser, rw), nil
+	return scrape.NewWithConfig(cfg.Browser, rw, cfg.SPAMarkers), nil
 }
 
 // newPageCache creates a cache from config, or nil if disabled.

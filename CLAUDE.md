@@ -96,7 +96,7 @@ ketch docs --resolve "glamour"                 # list matching library IDs
 
 JS-rendered pages (React SPAs, Salesforce Lightning, etc.) are automatically detected and re-fetched via headless Chrome using [Rod](https://go-rod.github.io/). No build tags — Rod is a regular pure Go dependency.
 
-- Detection: `extract/detect.go` — heuristic checks visible text, noscript tags, SPA framework markers, script-to-text ratio
+- Detection: `extract/detect.go` — heuristic checks visible text, noscript tags, SPA framework markers, script-to-text ratio. Covers modern hydration/streaming frameworks (Next.js App Router `self.__next_f`, React 18 streaming, Vue 3 `data-v-app`, SvelteKit, Qwik, Astro islands, empty mount nodes). A content-is-client-rendered override escalates pages whose server-rendered chrome looks "static" when a strong framework marker is present **and** the script payload dwarfs the visible text. Operators can add substrings via `spa_markers` (see SPA Markers below).
 - Browser: `scrape/browser.go` — Rod-based fetch with 30s timeout, WaitLoad + WaitStable
 - Config: `ketch config set browser chrome` (or `chromium`, or absolute path)
 - Install: `ketch browser install` downloads Chromium to cache dir
@@ -131,6 +131,20 @@ ketch config set url_rewrites '[
 ```
 
 Stored at `~/.config/ketch/config.json` under `url_rewrites`. View with `ketch config`.
+
+### SPA Markers
+
+Escape hatch for the JS-shell detector's long tail. A page whose HTML contains any of these substrings is treated as JS-rendered and re-fetched via the browser — matched (case-insensitively) alongside the built-in framework markers. Use it when a site renders content client-side via a framework or token ketch doesn't yet recognize, instead of hardcoding markers in Go.
+
+```bash
+# Treat pages carrying these tokens as JS-rendered.
+ketch config set spa_markers '["__next_f","data-v-app"]'
+
+# Clear the list.
+ketch config set spa_markers '[]'
+```
+
+Stored at `~/.config/ketch/config.json` under `spa_markers`. Blank markers are rejected (a `""` would match every page). Markers feed the same detector path as the built-ins, including the content-is-client-rendered override. View with `ketch config`.
 
 ### Page Cache
 

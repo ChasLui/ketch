@@ -6,20 +6,60 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
+// Detector classifies raw HTML as "static" (has content), "likely_shell"
+// (needs browser rendering), or "ambiguous". The zero value is ready to use
+// and matches only the built-in framework markers; NewDetector folds in
+// operator-configured markers (config spa_markers) on top of the built-ins.
+type Detector struct {
+	extraMarkers []string // operator-supplied markers, pre-lowercased
+}
+
+// NewDetector returns a Detector that also matches the given operator-supplied
+// SPA markers (substrings of the lowercased HTML) in addition to the built-in
+// ones. Markers are lowercased and trimmed; blank entries are dropped so a
+// stray "" can never match every page.
+func NewDetector(extraMarkers []string) *Detector {
+	var ms []string
+	for _, m := range extraMarkers {
+		if m = strings.ToLower(strings.TrimSpace(m)); m != "" {
+			ms = append(ms, m)
+		}
+	}
+	return &Detector{extraMarkers: ms}
+}
+
+// defaultDetector backs the package-level functions (built-in markers only).
+var defaultDetector = &Detector{}
+
 // DetectJSShell analyzes raw HTML and returns whether the page appears to be
 // a JavaScript shell that needs browser rendering for content extraction.
 // Returns: "static" (has content), "likely_shell" (needs browser), or "ambiguous".
+//
+// It uses only the built-in markers. Callers with operator-configured markers
+// should build a Detector via NewDetector and call its method instead.
 func DetectJSShell(rawHTML string) string {
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(rawHTML))
-	if err != nil {
-		return "ambiguous"
-	}
-	return DetectJSShellFromDoc(doc, rawHTML)
+	return defaultDetector.DetectJSShell(rawHTML)
 }
 
 // DetectJSShellFromDoc is the core detector given an already-parsed document
 // and its raw source. Useful when callers have already paid for the parse.
+// It uses only the built-in markers; see NewDetector for operator markers.
 func DetectJSShellFromDoc(doc *goquery.Document, rawHTML string) string {
+	return defaultDetector.DetectJSShellFromDoc(doc, rawHTML)
+}
+
+// DetectJSShell parses rawHTML and classifies it. See DetectJSShell.
+func (d *Detector) DetectJSShell(rawHTML string) string {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(rawHTML))
+	if err != nil {
+		return "ambiguous"
+	}
+	return d.DetectJSShellFromDoc(doc, rawHTML)
+}
+
+// DetectJSShellFromDoc classifies an already-parsed document. See
+// DetectJSShellFromDoc.
+func (d *Detector) DetectJSShellFromDoc(doc *goquery.Document, rawHTML string) string {
 	// Phase 1: collect visible text + meaningful block count in a single pass.
 	// Most pages short-circuit here without touching script/noscript/body.
 	vis := scanVisible(doc)
@@ -32,6 +72,20 @@ func DetectJSShellFromDoc(doc *goquery.Document, rawHTML string) string {
 		if isJSLoadingPage(vis.text) {
 			return "likely_shell"
 		}
+		// Content-is-client-rendered override. Server-rendered chrome (nav,
+		// footer, marketing copy) can carry >200 chars of real text while the
+		// actual content streams in client-side — e.g. Next.js App Router
+		// pages whose body lives in the RSC payload (self.__next_f.push), or
+		// Vue 3 / SvelteKit / Qwik / Astro islands hydrating an empty mount.
+		// Escalate only when BOTH a strong hydration/streaming marker is
+		// present AND the script payload dwarfs the visible text: each gate
+		// alone is too noisy, and every escalation costs a browser render, so
+		// the conjunction keeps false positives (and Chrome renders) bounded.
+		// Cheap gate first — clientRenderedPayload avoids the full-source
+		// lowercase that hasClientRenderMarker pays.
+		if clientRenderedPayload(doc, vis.text) && d.hasClientRenderMarker(rawHTML) {
+			return "likely_shell"
+		}
 		return "static"
 	}
 
@@ -41,7 +95,7 @@ func DetectJSShellFromDoc(doc *goquery.Document, rawHTML string) string {
 
 	// Phase 2: low-text pages need corroborators. Cheap DOM-local checks
 	// run first; the full-source lowercase is only paid for if they miss.
-	if hasCorroborator(doc, vis, rawHTML) {
+	if d.hasCorroborator(doc, vis, rawHTML) {
 		return "likely_shell"
 	}
 	return "ambiguous"
@@ -79,7 +133,7 @@ func scanVisible(doc *goquery.Document) visibleStats {
 // body JS messages, and string markers against the HTML. Cheaper DOM-local
 // checks run first, and the full-source lowercase is deferred until the
 // cheap checks miss.
-func hasCorroborator(doc *goquery.Document, vis visibleStats, rawHTML string) bool {
+func (d *Detector) hasCorroborator(doc *goquery.Document, vis visibleStats, rawHTML string) bool {
 	if noscriptMentionsJS(doc) {
 		return true
 	}
@@ -87,7 +141,7 @@ func hasCorroborator(doc *goquery.Document, vis visibleStats, rawHTML string) bo
 		return true
 	}
 	lowerHTML := strings.ToLower(rawHTML)
-	if hasSPAShellMarker(lowerHTML) || hasLowTextAppShellMarker(lowerHTML) {
+	if d.hasSPAShellMarker(lowerHTML) || hasLowTextAppShellMarker(lowerHTML) {
 		return true
 	}
 	return highScriptToTextRatio(doc, vis.text)
@@ -109,16 +163,39 @@ func bodyRequiresJavaScript(doc *goquery.Document) bool {
 	return requiresJavaScript(strings.ToLower(doc.Find("body").Text()))
 }
 
-func highScriptToTextRatio(doc *goquery.Document, visibleText string) bool {
-	scriptBytes := 0
+// sumScriptBytes totals the text length of every <script> element, including
+// inline JSON / RSC payloads (e.g. <script>self.__next_f.push(...)</script>
+// and <script type="application/json">). This is the script side of the
+// script-to-text ratio used by both the low-text corroborator and the
+// high-text client-render override.
+func sumScriptBytes(doc *goquery.Document) int {
+	n := 0
 	doc.Find("script").Each(func(_ int, sel *goquery.Selection) {
-		scriptBytes += len(sel.Text())
+		n += len(sel.Text())
 	})
-	visibleBytes := len(visibleText)
-	if visibleBytes == 0 {
-		visibleBytes = 1
+	return n
+}
+
+// highScriptToTextRatio is the low-text corroborator gate: script bytes exceed
+// visible text by 3×.
+func highScriptToTextRatio(doc *goquery.Document, visibleText string) bool {
+	return scriptExceedsText(sumScriptBytes(doc), len(visibleText), 3)
+}
+
+// clientRenderedPayload is the high-text override gate: the script/JSON payload
+// must dwarf the visible text by a wide margin (8×, deliberately stricter than
+// the low-text corroborator's 3×). Most pages with >200 chars of visible text
+// are genuinely static, so a higher bar is needed before we trust a hydration
+// marker enough to pay for a browser render.
+func clientRenderedPayload(doc *goquery.Document, visibleText string) bool {
+	return scriptExceedsText(sumScriptBytes(doc), len(visibleText), 8)
+}
+
+func scriptExceedsText(scriptLen, visibleLen, mult int) bool {
+	if visibleLen == 0 {
+		visibleLen = 1
 	}
-	return scriptBytes > visibleBytes*3
+	return scriptLen > visibleLen*mult
 }
 
 // isJSLoadingPage detects pages that have fallback content but are actually
@@ -138,9 +215,11 @@ func requiresJavaScript(lower string) bool {
 		strings.Contains(lower, "javascript is disabled")
 }
 
-// spaMarkers is a package-level slice so the strings aren't re-allocated
-// on every call. All markers are ASCII; the input is pre-lowercased.
+// spaMarkers are substring signals (matched in lowercased HTML) that a
+// low-text page is a framework shell needing browser rendering. All markers
+// are ASCII; the input is pre-lowercased.
 var spaMarkers = []string{
+	// Legacy framework roots.
 	`id="__next"`, `id='__next'`,
 	`id="__nuxt"`, `id='__nuxt'`,
 	`data-reactroot`,
@@ -149,11 +228,60 @@ var spaMarkers = []string{
 	`id="___gatsby"`, `id='___gatsby'`,
 	`__next_data__`,
 	`__nuxt__`,
+	// Modern hydration / streaming signals.
+	`__next_f`,             // Next.js App Router RSC streaming (self.__next_f.push)
+	`id="_r_"`, `id='_r_'`, // React 18 streaming hydration container
+	`data-v-app`,   // Vue 3 (createApp().mount)
+	`data-svelte`,  // Svelte components
+	`__sveltekit`,  // SvelteKit hydration globals
+	`q:container`,  // Qwik
+	`astro-island`, // Astro islands
 }
 
-func hasSPAShellMarker(lowerHTML string) bool {
+// clientRenderMarkers are the strong subset signalling that the page *content*
+// (not merely the chrome) is rendered client-side. Used by the high-text
+// "content is client-rendered" override, which additionally requires a
+// dominant script payload. Deliberately excludes legacy roots (id="__next",
+// data-reactroot, …) that are also present on fully server-rendered pages and
+// would over-trigger the override.
+var clientRenderMarkers = []string{
+	`__next_f`,                                       // Next.js App Router RSC streaming
+	`data-v-app`,                                     // Vue 3
+	`__sveltekit`,                                    // SvelteKit
+	`data-svelte`,                                    // Svelte
+	`q:container`,                                    // Qwik
+	`astro-island`,                                   // Astro islands
+	`<!--$-->`,                                       // React 18 streaming suspense boundary
+	`<div id="root"></div>`, `<div id='root'></div>`, // empty React mount node
+	`<div id="app"></div>`, `<div id='app'></div>`, // empty Vue/generic mount node
+}
+
+func (d *Detector) hasSPAShellMarker(lowerHTML string) bool {
 	for _, marker := range spaMarkers {
 		if strings.Contains(lowerHTML, marker) {
+			return true
+		}
+	}
+	for _, marker := range d.extraMarkers {
+		if strings.Contains(lowerHTML, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasClientRenderMarker reports whether a strong client-render marker (or an
+// operator-configured marker) is present. Lowercases the full source, so it is
+// only called once the cheaper clientRenderedPayload gate has passed.
+func (d *Detector) hasClientRenderMarker(rawHTML string) bool {
+	lower := strings.ToLower(rawHTML)
+	for _, marker := range clientRenderMarkers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	for _, marker := range d.extraMarkers {
+		if strings.Contains(lower, marker) {
 			return true
 		}
 	}

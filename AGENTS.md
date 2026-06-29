@@ -23,7 +23,7 @@ search/                      Searcher interface + Brave/DDG/SearXNG/EXA backends
 code/                        code.Searcher interface + Sourcegraph/GitHub backends
 docs/                        docs.Searcher interface + Context7/FTS5 backends
 scrape/                      HTTP fetch + Page type, JS detection fallback, Rod browser
-extract/                     readability + html-to-markdown pipeline, JS shell detection
+extract/                     readability + html-to-markdown pipeline, JS shell detection (Detector: built-in + config spa_markers, modern hydration/streaming frameworks)
 crawl/                       BFS crawler, work queue + worker pool, background status
 config/                      JSON config loading/saving (~/.config/ketch/)
 cache/                       TTL page cache (Store interface, BBoltStore backend)

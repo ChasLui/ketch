@@ -27,6 +27,7 @@ type Config struct {
 	SourcegraphURL string            `json:"sourcegraph_url,omitempty"`
 	GithubToken    string            `json:"github_token,omitempty"`
 	URLRewrites    []urlrewrite.Rule `json:"url_rewrites,omitempty"`
+	SPAMarkers     []string          `json:"spa_markers,omitempty"`
 }
 
 // ResolveGithubToken returns a token and the source it came from, walking the

@@ -86,6 +86,18 @@ ketch browser status
 
 Once configured, browser rendering is transparent — `ketch scrape` and `ketch crawl` automatically detect JS-rendered pages and use the browser when needed. Static pages are always fetched via plain HTTP (fast path).
 
+Detection (`extract/detect.go`) covers both classic SPAs and modern hydration/streaming frameworks: Next.js App Router (RSC streaming via `self.__next_f`), React 18 streaming hydration, Vue 3 (`data-v-app`), SvelteKit, Qwik, and Astro islands, plus empty mount nodes. Pages whose server-rendered chrome carries enough visible text to look "static" but whose actual content streams in client-side are caught by a content-is-client-rendered override (strong framework marker **and** a script payload that dwarfs the visible text).
+
+For the long tail, add your own substrings with `spa_markers` — a page whose HTML contains any of them is treated as JS-rendered (matched alongside the built-in markers):
+
+```sh
+# Force browser rendering for pages carrying these markers
+ketch config set spa_markers '["__next_f","data-v-app"]'
+
+# Clear the list
+ketch config set spa_markers '[]'
+```
+
 ## Crawling
 
 Crawl entire sites via BFS link discovery or sitemaps:

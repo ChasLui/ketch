@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/1broseidon/ketch/config"
@@ -25,6 +26,7 @@ type configInfo struct {
 	SourcegraphURL        string            `json:"sourcegraph_url"`
 	GithubTokenSource     string            `json:"github_token_source"`
 	URLRewrites           []urlrewrite.Rule `json:"url_rewrites,omitempty"`
+	SPAMarkers            []string          `json:"spa_markers,omitempty"`
 	AvailableBackends     []string          `json:"available_backends"`
 	AvailableCodeBackends []string          `json:"available_code_backends"`
 	AvailableDocBackends  []string          `json:"available_doc_backends"`
@@ -80,6 +82,7 @@ func runConfigShow(_ *cobra.Command, _ []string) error {
 		SourcegraphURL:        c.SourcegraphURL,
 		GithubTokenSource:     ghSource,
 		URLRewrites:           c.URLRewrites,
+		SPAMarkers:            c.SPAMarkers,
 		AvailableBackends:     config.AvailableBackends(),
 		AvailableCodeBackends: config.AvailableCodeBackends(),
 		AvailableDocBackends:  config.AvailableDocBackends(),
@@ -152,8 +155,10 @@ func applyConfigSet(c *config.Config, key, value string) error {
 		c.GithubToken = value
 	case "url_rewrites":
 		return setURLRewrites(c, value)
+	case "spa_markers":
+		return setSPAMarkers(c, value)
 	default:
-		return exitErrf(ExitValidation, "unknown key: %s (valid: backend, searxng_url, brave_api_key, exa_api_key, limit, cache_ttl, browser, code_backend, docs_backend, context7_api_key, sourcegraph_url, github_token, url_rewrites)", key)
+		return exitErrf(ExitValidation, "unknown key: %s (valid: backend, searxng_url, brave_api_key, exa_api_key, limit, cache_ttl, browser, code_backend, docs_backend, context7_api_key, sourcegraph_url, github_token, url_rewrites, spa_markers)", key)
 	}
 	return nil
 }
@@ -184,6 +189,24 @@ func setURLRewrites(c *config.Config, value string) error {
 		return exitErrf(ExitValidation, "%w", err)
 	}
 	c.URLRewrites = rules
+	return nil
+}
+
+// setSPAMarkers parses a JSON array of substrings that, when found in a page's
+// HTML, mark it as a JS-rendered shell needing browser rendering (matched
+// alongside the built-in markers). An empty array ([]) clears the list. Blank
+// markers are rejected — a "" marker would match every page.
+func setSPAMarkers(c *config.Config, value string) error {
+	var markers []string
+	if err := json.Unmarshal([]byte(value), &markers); err != nil {
+		return exitErrf(ExitValidation, "spa_markers must be a JSON array of strings: %w", err)
+	}
+	for i, m := range markers {
+		if strings.TrimSpace(m) == "" {
+			return exitErrf(ExitValidation, "spa_markers[%d] is blank; markers must be non-empty substrings", i)
+		}
+	}
+	c.SPAMarkers = markers
 	return nil
 }
 
