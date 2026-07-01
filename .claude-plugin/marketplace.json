@@ -1,0 +1,22 @@
+{
+  "name": "ketch",
+  "owner": {
+    "name": "1broseidon"
+  },
+  "description": "Plugins for ketch — a stateless CLI for web search, OSS code search, library docs, scraping, and crawling.",
+  "plugins": [
+    {
+      "name": "ketch",
+      "source": "./plugins/ketch",
+      "description": "Optional Claude Code integration for the ketch CLI: wires up the `ketch mcp serve` MCP server (search, code, docs, scrape, crawl) and installs the bundled ketch research skill. Requires the ketch binary >= v0.10.0 on PATH: brew install 1broseidon/tap/ketch or go install github.com/1broseidon/ketch@latest.",
+      "author": {
+        "name": "1broseidon"
+      },
+      "homepage": "https://1broseidon.github.io/ketch/",
+      "repository": "https://github.com/1broseidon/ketch",
+      "license": "MIT",
+      "category": "research",
+      "keywords": ["research", "web-search", "code-search", "docs", "scrape", "crawl", "mcp"]
+    }
+  ]
+}

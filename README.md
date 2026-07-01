@@ -162,6 +162,17 @@ claude mcp add ketch -- ketch mcp serve
 
 Tool errors carry the exit-code taxonomy as stable message prefixes: `[validation]`, `[not_found]`, `[upstream]`, `[precondition]`, `[cancelled]`.
 
+### Claude Code plugin
+
+The CLI on PATH is all ketch needs — but if you want Claude Code to wire up the MCP server and the [bundled skill](./skills/ketch/) in one step, this repo doubles as a plugin marketplace:
+
+```sh
+claude plugin marketplace add 1broseidon/ketch
+claude plugin install ketch@ketch
+```
+
+The plugin registers `ketch mcp serve` as an MCP server and installs the ketch research skill. It does not bundle the binary: `ketch` >= v0.10.0 must be on PATH (`brew install 1broseidon/tap/ketch` or `go install github.com/1broseidon/ketch@latest`).
+
 ## Contributing
 
 Issues and pull requests are welcome at [github.com/1broseidon/ketch](https://github.com/1broseidon/ketch).

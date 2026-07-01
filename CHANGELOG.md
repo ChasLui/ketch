@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Claude Code plugin + marketplace manifest: the repo now doubles as a Claude Code plugin marketplace (`.claude-plugin/marketplace.json`) hosting one plugin (`plugins/ketch/`) — `claude plugin marketplace add 1broseidon/ketch`, then `claude plugin install ketch@ketch`. The plugin is an optional convenience for Claude Code users, never a prerequisite (the stateless CLI remains the zero-infrastructure path): it wires up `ketch mcp serve` as a stdio MCP server (`.mcp.json`, expects the ketch binary >= v0.10.0 on PATH — the plugin does not vendor it) and ships the bundled agent skill via a symlink to the canonical copy at [`skills/ketch/`](./skills/ketch/), which stays where it is for non-Claude-Code agents.
+
 ## [0.10.0] - 2026-07-01
 
 ### Added

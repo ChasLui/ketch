@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ketch": {
+      "command": "ketch",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
