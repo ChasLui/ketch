@@ -150,6 +150,8 @@ Use `ketch` for external research — web pages, OSS code, library docs.
 
 The operator configures backends once; the agent's prompt never needs to mention which provider is behind `ketch search`.
 
+For a fuller agent playbook — surface routing, token budgets, error-code control flow, a deep-research recipe, and guided backend setup — install the bundled skill from [`skills/ketch/`](./skills/ketch/) (works with any agent that loads `SKILL.md`-style skills, e.g. Claude Code).
+
 ### MCP server
 
 For agents that speak MCP instead of shelling out, `ketch mcp serve` runs the same five surfaces — `search`, `code`, `docs`, `scrape`, `crawl` — as MCP tools over stdio, using the same config and backends as the CLI. To register it with Claude Code:
