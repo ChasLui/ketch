@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -26,47 +27,76 @@ func init() {
 	cacheCmd.AddCommand(cacheClearCmd)
 }
 
-func runCacheStats(_ *cobra.Command, _ []string) error {
+// cacheStatsInfo is the stable JSON payload for `ketch cache --json`.
+// Entries is null and Locked is true when another process holds the cache
+// lock — entry counts can't be read then, but file size still can.
+type cacheStatsInfo struct {
+	Path      string `json:"path"`
+	Entries   *int   `json:"entries"`
+	SizeBytes int64  `json:"size_bytes"`
+	Size      string `json:"size"`
+	TTL       string `json:"ttl"`
+	Locked    bool   `json:"locked"`
+}
+
+func runCacheStats(cmd *cobra.Command, _ []string) error {
+	asJSON, _ := cmd.Root().PersistentFlags().GetBool("json")
 	dbPath, _ := cache.DBPath()
 
-	// Try read-only open; falls back to file stats if DB is locked
-	c := cache.NewReadOnly()
-	if c != nil {
+	info := cacheStatsInfo{Path: dbPath, TTL: cfg.CacheTTL}
+	// Try read-only open; falls back to file stats if DB is locked by
+	// another process (e.g. a background crawl).
+	if c := cache.NewReadOnly(); c != nil {
 		defer c.Close()
 		entries, bytes := c.Stats()
-		fmt.Println("---")
-		fmt.Printf("path: %s\n", dbPath)
-		fmt.Printf("entries: %d\n", entries)
-		fmt.Printf("size: %s\n", formatBytes(bytes))
-		fmt.Printf("ttl: %s\n", cfg.CacheTTL)
-		fmt.Println("---")
-		return nil
+		info.Entries = &entries
+		info.SizeBytes = bytes
+	} else {
+		info.Locked = true
+		if st, err := os.Stat(dbPath); err == nil {
+			info.SizeBytes = st.Size()
+		}
+	}
+	info.Size = formatBytes(info.SizeBytes)
+
+	if asJSON {
+		return json.NewEncoder(os.Stdout).Encode(info)
 	}
 
-	// DB locked by another process (e.g. background crawl)
 	fmt.Println("---")
-	fmt.Printf("path: %s\n", dbPath)
-	if info, err := os.Stat(dbPath); err == nil {
-		fmt.Printf("size: %s\n", formatBytes(info.Size()))
+	fmt.Printf("path: %s\n", info.Path)
+	if info.Entries != nil {
+		fmt.Printf("entries: %d\n", *info.Entries)
 	}
-	fmt.Printf("ttl: %s\n", cfg.CacheTTL)
-	fmt.Println("note: cache in use by another process")
+	fmt.Printf("size: %s\n", info.Size)
+	fmt.Printf("ttl: %s\n", info.TTL)
+	if info.Locked {
+		fmt.Println("note: cache in use by another process")
+	}
 	fmt.Println("---")
 	return nil
 }
 
-func runCacheClear(_ *cobra.Command, _ []string) error {
+func runCacheClear(cmd *cobra.Command, _ []string) error {
+	asJSON, _ := cmd.Root().PersistentFlags().GetBool("json")
+
 	ttl, err := time.ParseDuration(cfg.CacheTTL)
 	if err != nil {
 		ttl = time.Hour
 	}
 	c := cache.New(ttl)
 	if c == nil {
-		return fmt.Errorf("cannot open cache (may be in use by another process)")
+		return exitErrf(ExitPrecondition, "cannot open cache (may be in use by another process)")
 	}
 	defer c.Close()
 	if err := c.Clear(); err != nil {
 		return err
+	}
+
+	if asJSON {
+		return json.NewEncoder(os.Stdout).Encode(struct {
+			Cleared bool `json:"cleared"`
+		}{true})
 	}
 	fmt.Fprintln(os.Stderr, "cache cleared")
 	return nil
