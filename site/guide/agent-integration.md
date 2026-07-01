@@ -76,15 +76,24 @@ ketch scrape https://help.example.com/s/article/1234
   "config_path": "/home/user/.config/ketch/config.json",
   "backend": "searxng",
   "searxng_url": "http://localhost:8081",
+  "brave_api_key_set": false,
+  "exa_api_key_set": false,
   "limit": 5,
   "cache_ttl": "72h",
   "browser": "chrome",
   "code_backend": "grepapp",
   "docs_backend": "context7",
+  "context7_api_key_set": true,
   "sourcegraph_url": "https://sourcegraph.com",
   "github_token_source": "none",
+  "github_token_set": false,
   "available_backends": ["brave", "ddg", "searxng", "exa"],
   "available_code_backends": ["grepapp", "sourcegraph", "github"],
-  "available_doc_backends": ["context7", "local"]
+  "available_doc_backends": ["context7"]
 }
 ```
+
+The `*_set` booleans tell an agent whether a keyed backend is ready without
+firing a call (key values are never printed). For a live health check of every
+backend — reachability, key validity, browser, cache — run `ketch doctor
+--json` (CLI-only, not an MCP tool).

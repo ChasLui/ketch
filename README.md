@@ -97,6 +97,7 @@ ketch scrape https://example.com --json
 | `browser` | Manage headless Chrome for JS-rendered pages (`install`, `status`) |
 | `config` | Show effective config as JSON, or `init` / `set` / `path` |
 | `cache` | Show page-cache stats, or `clear` |
+| `doctor` | Live health check of every backend, the browser, and the cache — exit `0` healthy, `5` when a configured surface is broken |
 | `mcp` | Run ketch as an MCP server over stdio (`mcp serve`) — the five research surfaces as tools |
 | `version` | Print version, commit, build date |
 

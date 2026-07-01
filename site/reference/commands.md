@@ -222,6 +222,27 @@ ketch cache               # show cache stats (path, entries, size, TTL)
 ketch cache clear         # remove all cached pages
 ```
 
+## ketch doctor
+
+Run live health checks against every surface: search backends
+(brave/ddg/searxng/exa), code backends (grepapp/sourcegraph/github), docs
+(context7), the configured browser binary, and the page cache. Probes run
+concurrently with a per-check timeout and are read-only (nothing is written
+to the cache).
+
+```sh
+ketch doctor              # aligned human report, one line per check
+ketch doctor --json       # stable schema: [{surface, backend, status, detail, latency_ms}]
+```
+
+Each check reports `ok`, `no_key`, `unreachable`, `misconfigured` (with a fix
+hint — e.g. a SearXNG instance that blocks `format=json` until settings.yml
+enables it), or `skipped`. Exit code `0` means every applicable check is ok or
+cleanly skipped; exit `5` means a configured surface is broken: the default
+backend of a surface, a backend with an API key explicitly set, the configured
+browser, or the cache. Optional backends that merely lack a key do not fail
+the run.
+
 ## ketch version
 
 Print version, commit, and build date.

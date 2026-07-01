@@ -19,21 +19,27 @@ The discovery payload:
   "config_path": "/home/user/.config/ketch/config.json",
   "backend": "brave",
   "searxng_url": "http://localhost:8081",
+  "brave_api_key_set": false,
+  "exa_api_key_set": false,
   "limit": 5,
   "cache_ttl": "72h",
   "code_backend": "grepapp",
   "docs_backend": "context7",
+  "context7_api_key_set": false,
   "sourcegraph_url": "https://sourcegraph.com",
   "github_token_source": "none",
+  "github_token_set": false,
   "available_backends": ["brave", "ddg", "searxng", "exa"],
   "available_code_backends": ["grepapp", "sourcegraph", "github"],
-  "available_doc_backends": ["context7", "local"]
+  "available_doc_backends": ["context7"]
 }
 ```
 
-`browser` is included only when set. `github_token_source` reports where the
-GitHub token was resolved from (`config`, `env`, `gh-cli`, or `none`) — the
-token itself is never printed. `url_rewrites` appears only when configured.
+`browser` is included only when set. The `*_set` booleans report key presence
+only — key values are never printed. `github_token_source` reports where the
+GitHub token was resolved from (`config`, `env`, `gh-cli`, or `none`), and
+`github_token_set` is true whenever that chain resolved a token.
+`url_rewrites` appears only when configured.
 
 ## Setting Values
 

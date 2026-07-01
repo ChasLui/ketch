@@ -17,6 +17,7 @@ cmd/
   config.go                  Config command: discovery, init, set, path
   cache.go                   Cache command: stats, clear
   browser.go                 Browser command: install, status
+  doctor.go                  Doctor command: report formatting + exit-code gating over doctor.Run
   mcp.go                     MCP command: `mcp serve` runs the MCP server over stdio
   proc_unix.go               Unix process management (detach, signals)
   proc_windows.go            Windows process management stub
@@ -28,6 +29,7 @@ scrape/                      HTTP fetch + Page type, JS detection fallback, Rod 
 extract/                     readability + html-to-markdown pipeline, JS shell detection (Detector: built-in + config spa_markers, modern hydration/streaming frameworks)
 crawl/                       BFS crawler, work queue + worker pool, background status
 config/                      JSON config loading/saving (~/.config/ketch/)
+doctor/                      Health checks: concurrent read-only probes per backend + browser + cache, status classification (ok/no_key/unreachable/misconfigured/skipped)
 cache/                       TTL page cache (Store interface, BBoltStore backend)
 httpx/                       Shared tuned *http.Transport for all HTTP backends
 updatecheck/                 "new release available" probe + throttled stderr hint
@@ -55,6 +57,7 @@ Reusable packages live at the module root so external programs can `import "gith
 - **Option parity**: each tool exposes the per-invocation options of its CLI command (`scrape` gets `selector`/`raw`/`force_browser`/`no_llms_txt`/`trim`/`max_chars`/`no_cache` plus a `urls` batch input; `search` gets `searxng_url` and `scrape`; `crawl` gets `depth`/`sitemap`/`allow`/`deny`/`max_pages`). Config-level settings (API keys, cache TTL, browser binary) stay operator-configured and are never tool params.
 - **Error taxonomy**: every tool error starts with a stable machine-readable prefix mirroring the CLI exit codes — `[validation]` (exit 2), `[not_found]` (3), `[upstream]` (4), `[precondition]` (5), `[cancelled]` (6) — so agents can tell "fix your input" from "retry later". MCP has no structured tool-error field; the prefix is the contract.
 - **Bounded crawl**: the `crawl` tool is synchronous and capped (`max_pages` default 30, hard cap 100, 3-minute wall clock); partial results return with `stopped: "max_pages" | "timeout"`. Detached background crawls (`ketch crawl --background`, status/stop) remain CLI-only.
+- **CLI-only operator commands**: `config`, `cache`, and `doctor` are deliberately not MCP tools. They are operator actions (change credentials, clear state, diagnose the installation), not research surfaces — an agent that needs to know whether a backend is ready reads `ketch config`'s `*_set` booleans or the operator runs `ketch doctor`. Don't add them to the server.
 - **Annotations**: all tools are read-only network fetchers and declare `readOnlyHint: true` and `openWorldHint: true`.
 - **Security note**: the server performs no URL filtering — `scrape` and `crawl` fetch whatever URL the client supplies, including private or internal addresses reachable from wherever the server runs (their descriptions say so). Run it with the network posture you'd give the agent itself; don't point an untrusted agent at a server inside a sensitive network.
 - **Smoke test**: `go test -tags mcpsmoke ./mcp/... -v` exercises the real binary over stdio (live network; not part of `go test ./...`).
@@ -90,8 +93,9 @@ ketch code "query" --lang go               # with language filter
 ketch docs "query"                          # docs search (context7)
 ketch docs "query" --library /org/repo     # skip resolve, fetch directly
 ketch docs --resolve "library name"        # resolve library name → Context7 IDs
-ketch config                                # show effective config + backends
+ketch config                                # show effective config + backends (incl. *_key_set presence booleans)
 ketch cache                                 # show cache stats
+ketch doctor                                # live health check of every backend + browser + cache (exit 5 if a configured surface is broken)
 ketch mcp serve                             # run as an MCP server over stdio (search/code/docs/scrape/crawl tools)
 ```
 
