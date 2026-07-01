@@ -58,7 +58,7 @@ func runRoot(cmd *cobra.Command, _ []string) error {
 
 	p("Commands:\n")
 	// Surface-first ordering: main research commands first, then supporting ones.
-	order := []string{"search", "code", "docs", "scrape", "crawl", "browser", "cache", "config"}
+	order := []string{"search", "code", "docs", "scrape", "crawl", "browser", "cache", "config", "doctor"}
 	byName := make(map[string]*cobra.Command, len(cmd.Commands()))
 	for _, sub := range cmd.Commands() {
 		byName[sub.Name()] = sub

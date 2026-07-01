@@ -14,17 +14,25 @@ import (
 )
 
 // configInfo is the discovery payload returned by `ketch config`.
+// The *_set booleans report key presence only — key values are never printed.
+// github_token_set follows the same resolution chain as github_token_source
+// (config → $GITHUB_TOKEN/$GH_TOKEN → gh CLI): it is true iff the source is
+// not "none".
 type configInfo struct {
 	ConfigPath            string            `json:"config_path"`
 	Backend               string            `json:"backend"`
 	SearxngURL            string            `json:"searxng_url"`
+	BraveAPIKeySet        bool              `json:"brave_api_key_set"`
+	ExaAPIKeySet          bool              `json:"exa_api_key_set"`
 	Limit                 int               `json:"limit"`
 	CacheTTL              string            `json:"cache_ttl"`
 	Browser               string            `json:"browser,omitempty"`
 	CodeBackend           string            `json:"code_backend"`
 	DocsBackend           string            `json:"docs_backend"`
+	Context7APIKeySet     bool              `json:"context7_api_key_set"`
 	SourcegraphURL        string            `json:"sourcegraph_url"`
 	GithubTokenSource     string            `json:"github_token_source"`
+	GithubTokenSet        bool              `json:"github_token_set"`
 	URLRewrites           []urlrewrite.Rule `json:"url_rewrites,omitempty"`
 	SPAMarkers            []string          `json:"spa_markers,omitempty"`
 	AvailableBackends     []string          `json:"available_backends"`
@@ -74,13 +82,17 @@ func runConfigShow(_ *cobra.Command, _ []string) error {
 		ConfigPath:            path,
 		Backend:               c.Backend,
 		SearxngURL:            c.SearxngURL,
+		BraveAPIKeySet:        c.BraveAPIKey != "",
+		ExaAPIKeySet:          c.ExaAPIKey != "",
 		Limit:                 c.Limit,
 		CacheTTL:              c.CacheTTL,
 		Browser:               c.Browser,
 		CodeBackend:           c.CodeBackend,
 		DocsBackend:           c.DocsBackend,
+		Context7APIKeySet:     c.Context7APIKey != "",
 		SourcegraphURL:        c.SourcegraphURL,
 		GithubTokenSource:     ghSource,
+		GithubTokenSet:        ghSource != "none",
 		URLRewrites:           c.URLRewrites,
 		SPAMarkers:            c.SPAMarkers,
 		AvailableBackends:     config.AvailableBackends(),
