@@ -81,12 +81,23 @@ func TestMCPServerSmoke(t *testing.T) {
 	})
 
 	t.Run("CodeRoundTrip", func(t *testing.T) {
-		res, err := session.CallTool(ctx, &mcpsdk.CallToolParams{
-			Name:      "code",
-			Arguments: map[string]any{"query": "func main", "lang": "go", "limit": 1},
-		})
-		if err != nil {
-			t.Fatalf("call code tool failed: %v", err)
+		// grep.app occasionally 504s; retry transient [upstream] failures a
+		// couple of times before declaring the round-trip broken.
+		var res *mcpsdk.CallToolResult
+		var err error
+		for attempt := 1; attempt <= 3; attempt++ {
+			res, err = session.CallTool(ctx, &mcpsdk.CallToolParams{
+				Name:      "code",
+				Arguments: map[string]any{"query": "func main", "lang": "go", "limit": 1},
+			})
+			if err != nil {
+				t.Fatalf("call code tool failed: %v", err)
+			}
+			if !res.IsError || !strings.HasPrefix(resultText(res), "[upstream]") {
+				break
+			}
+			t.Logf("attempt %d hit a transient upstream failure: %s", attempt, resultText(res))
+			time.Sleep(2 * time.Second)
 		}
 		if res.IsError {
 			t.Fatalf("code tool returned an error result: %s", resultText(res))
