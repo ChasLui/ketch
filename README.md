@@ -5,300 +5,163 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/1broseidon/ketch)](https://goreportcard.com/report/github.com/1broseidon/ketch)
 [![Latest Release](https://img.shields.io/github/v/release/1broseidon/ketch)](https://github.com/1broseidon/ketch/releases/latest)
 
-Fast, stateless CLI for web search, code search, library docs, and scraping. Three search surfaces (web, code, docs), one binary, no daemon. Designed to be called by AI agents or directly from your terminal.
+A stateless CLI for web search, code search, library docs, and scraping — one binary, no daemon, no API server to run.
+
+## Why ketch
+
+Most research tooling for agents means wiring up several provider SDKs, each with its own auth and response shape. ketch collapses that into one binary with three research surfaces:
+
+- `ketch search` — web search (Brave, DuckDuckGo, SearXNG, or Exa)
+- `ketch code` — grep real OSS source across public repos (Grep, Sourcegraph, or GitHub Code Search)
+- `ketch docs` — curated, version-aware library documentation (Context7)
+
+Plus `ketch scrape` and `ketch crawl` to turn any URL or site into clean markdown.
+
+It's built for two audiences at once:
+
+- **Humans**, who want a fast terminal tool for the same job `curl | pandoc` or a browser tab would otherwise do.
+- **AI agents**, who want structured, predictable output (`--json` everywhere), documented exit codes for control flow, and a single `ketch config` call to discover what backends are active — no environment probing, no per-provider glue code.
+
+An operator configures the backend once (`ketch config set backend searxng`); every agent invocation afterward just calls `ketch search` or `ketch scrape` without knowing or caring which provider is behind it.
 
 ## Install
 
-Homebrew:
-
 ```sh
+# Homebrew
 brew install 1broseidon/tap/ketch
-```
 
-Or with Go:
-
-```sh
+# go install
 go install github.com/1broseidon/ketch@latest
+
+# Or download a prebuilt binary (linux/darwin/windows, amd64/arm64)
+# from https://github.com/1broseidon/ketch/releases
 ```
 
-Or grab a binary from [releases](https://github.com/1broseidon/ketch/releases).
-
-## Quick start
+## Quickstart
 
 ```sh
-# Search the web
+$ ketch scrape https://go.dev/doc/effective_go
+---
+url: https://go.dev/doc/effective_go
+title: Effective Go - The Go Programming Language
+words: 16582
+---
+1. [Documentation](https://go.dev/doc/)
+2. [Effective Go](https://go.dev/doc/effective_go)
+...
+## Introduction
+
+Go is an open-source programming language that focuses on simplicity, reliability, and efficiency...
+```
+
+Search real OSS code with zero configuration:
+
+```sh
+$ ketch code "http.NewRequestWithContext" --lang go --limit 2
+---
+query: http.NewRequestWithContext
+lang: go
+backend: grepapp
+result_count: 2
+---
+harness/harness  registry/app/remote/clients/registry/client.go  (line 207)
+  req, err := http.NewRequestWithContext(ctx, http.MethodGet, buildPingURL(c.url), nil)
+  https://github.com/harness/harness/blob/main/registry/app/remote/clients/registry/client.go
+...
+```
+
+Web search needs a backend configured first — the default (`brave`) requires a free API key:
+
+```sh
+ketch config set brave_api_key <key>
 ketch search "golang error handling"
+ketch search "golang error handling" --scrape   # fetch + extract full content per result
+```
 
-# Search and fetch full content from each result
-ketch search "golang error handling" --scrape
+Every command takes `--json` for structured output:
 
-# Search real OSS code (Grep by default, or Sourcegraph / GitHub)
-ketch code "http.NewRequestWithContext" --lang go
-ketch code "NewRequestWith.*Context" --regex
-ketch code "rate limit middleware" --lang go -b github
-
-# Search library docs (Context7)
-ketch docs "how to render with word wrap" --library /charmbracelet/glamour
-
-# Scrape a URL to clean markdown
-ketch scrape https://go.dev/doc/effective_go
-
-# Scrape multiple URLs concurrently
-ketch scrape https://example.com https://go.dev
-
-# Crawl a site
-ketch crawl https://example.com --depth 2
-
-# Crawl a sitemap in the background
-ketch crawl https://example.com/sitemap.xml --sitemap --background
-
-# JSON output for piping
-ketch search "query" --json
-ketch code "query" --json
+```sh
 ketch scrape https://example.com --json
+# {"url":"https://example.com","title":"Example Domain","markdown":"..."}
 ```
 
 ## Commands
 
 | Command | What it does |
-|---------|-------------|
-| `search` | Web search via Brave, DuckDuckGo, SearXNG, or Exa, optional `--scrape` for full content |
-| `code` | Code search across OSS via Grep (default), Sourcegraph, or GitHub Code Search |
-| `docs` | Library/framework docs via Context7 (curated, version-aware snippets) |
-| `scrape` | Fetch URLs and extract clean markdown, concurrent batch support |
-| `crawl` | BFS or sitemap crawl with background execution and status tracking |
-| `browser` | Manage headless Chrome for JS-rendered pages |
-| `config` | Show effective configuration and available backends as JSON |
-| `cache` | Show cache stats or clear cached pages |
-| `version` | Print version, commit, and build date |
+|---|---|
+| `search` | Web search — Brave, DuckDuckGo, SearXNG, or Exa |
+| `code` | Grep real OSS source — Grep (default), Sourcegraph, or GitHub Code Search |
+| `docs` | Library/framework docs — Context7 (curated, version-aware snippets) |
+| `scrape` | Fetch URL(s) and extract clean markdown; concurrent batch, JSON array, file, or stdin input |
+| `crawl` | BFS or sitemap crawl with optional background execution and status tracking |
+| `browser` | Manage headless Chrome for JS-rendered pages (`install`, `status`) |
+| `config` | Show effective config as JSON, or `init` / `set` / `path` |
+| `cache` | Show page-cache stats, or `clear` |
+| `mcp` | Run ketch as an MCP server over stdio (`mcp serve`) — the five research surfaces as tools |
+| `version` | Print version, commit, build date |
 
-All commands support `--json` for structured output. `--json` is the only global flag; `-b/--backend` is local to `search`, `code`, and `docs`.
+Every command supports `-h/--help` for its full flag list; `--json` is the only flag global to every command. Full flag reference lives at [1broseidon.github.io/ketch](https://1broseidon.github.io/ketch/).
 
-## Browser rendering
+### Backends
 
-JS-rendered pages (React SPAs, Salesforce Lightning, etc.) are automatically detected and re-fetched via headless Chrome. No extra setup if Chrome is already installed:
+| Surface | Default | Also available | Setup |
+|---|---|---|---|
+| `search` | `brave` | `ddg`, `searxng`, `exa` | Brave needs a free key (`ketch config set brave_api_key <key>`); the rest work with zero config |
+| `code` | `grepapp` | `sourcegraph`, `github` | Grep and Sourcegraph need nothing; GitHub uses `gh auth login`, `$GITHUB_TOKEN`, or `ketch config set github_token <tok>` |
+| `docs` | `context7` | `local` (planned, not yet implemented) | Free key: `ketch config set context7_api_key <key>` |
 
-```sh
-# Point ketch to your Chrome installation
-ketch config set browser chrome
+## Why it works well for agents
 
-# Or install Chromium to ketch's cache dir
-ketch browser install
-
-# Check browser status
-ketch browser status
-```
-
-Once configured, browser rendering is transparent — `ketch scrape` and `ketch crawl` automatically detect JS-rendered pages and use the browser when needed. Static pages are always fetched via plain HTTP (fast path).
-
-Detection (`extract/detect.go`) covers both classic SPAs and modern hydration/streaming frameworks: Next.js App Router (RSC streaming via `self.__next_f`), React 18 streaming hydration, Vue 3 (`data-v-app`), SvelteKit, Qwik, and Astro islands, plus empty mount nodes. Pages whose server-rendered chrome carries enough visible text to look "static" but whose actual content streams in client-side are caught by a content-is-client-rendered override (strong framework marker **and** a script payload that dwarfs the visible text).
-
-For the long tail, add your own substrings with `spa_markers` — a page whose HTML contains any of them is treated as JS-rendered (matched alongside the built-in markers):
-
-```sh
-# Force browser rendering for pages carrying these markers
-ketch config set spa_markers '["__next_f","data-v-app"]'
-
-# Clear the list
-ketch config set spa_markers '[]'
-```
-
-## Crawling
-
-Crawl entire sites via BFS link discovery or sitemaps:
-
-```sh
-# BFS crawl from a seed URL
-ketch crawl https://example.com --depth 3
-
-# Sitemap-based crawl
-ketch crawl https://example.com/sitemap.xml --sitemap
-
-# Run in background with status tracking
-ketch crawl https://example.com/sitemap.xml --sitemap --background
-ketch crawl status              # list all crawls
-ketch crawl status c_a1b2c3d4   # check specific crawl
-ketch crawl stop c_a1b2c3d4     # stop a running crawl
-```
-
-Crawled pages are cached — re-running the same crawl returns instantly from cache. Use `--no-cache` to force re-fetch.
-
-## Code search
-
-`ketch code` searches real source code across open-source repositories. Three backends:
-
-```sh
-# Grep (default) — zero config, no token, literal/regex over 1M+ public repos
-ketch code "http.NewRequestWithContext" --lang go
-ketch code "NewRequestWith.*Context" --regex
-
-# Sourcegraph — zero config, ~1M OSS repos, exact line matches
-ketch code "http.NewRequestWithContext" --lang go -b sourcegraph
-
-# GitHub Code Search — uses your gh CLI token automatically if installed
-ketch code "rate limit middleware" --lang go -b github --limit 10
-```
-
-Each result shows the matched line, repo, file path, star count, and a permalink. Sourcegraph results are filtered to non-archived, non-fork repos by default. `--regex` interprets the query as a regular expression (Grep and Sourcegraph only).
-
-**GitHub auth resolution chain** (for `-b github`): explicit config (`ketch config set github_token <tok>`) → `$GITHUB_TOKEN` → `$GH_TOKEN` → `gh auth token` (if `gh` CLI is installed). Run `ketch config` to see which source is active. Stargazer counts come from a single batched GraphQL call after the REST search.
-
-## Library docs
-
-`ketch docs` fetches curated, version-aware documentation snippets from Context7:
-
-```sh
-ketch config set context7_api_key ctx7sk_...
-
-# Auto-resolve library from query
-ketch docs "middleware authentication"
-
-# Skip resolve, fetch directly from a known library ID
-ketch docs "how to render with word wrap" --library /charmbracelet/glamour
-
-# List matching library IDs without fetching docs
-ketch docs --resolve "glamour"
-```
-
-## Flags
-
-| Flag | Scope | Default | Description |
-|------|-------|---------|-------------|
-| `--json` | global | false | JSON output (the only global flag) |
-| `--backend, -b` | search, code, docs | cfg value | Backend for that surface |
-| `--limit, -l` | search, code, docs | 5 | Max results |
-| `--scrape` | search | false | Fetch full content from each result |
-| `--minimal` | search, code, docs | false | One result per line, tab-separated |
-| `--searxng-url` | search | http://localhost:8081 | SearXNG instance URL |
-| `--raw` | scrape | false | Raw HTML instead of markdown |
-| `--select` | scrape | — | CSS selector to extract (skips readability) |
-| `--trim` | search, scrape | false | Strip markdown formatting, keep text |
-| `--max-chars` | search, scrape | 0 | Truncate markdown to N chars (0 = off) |
-| `--no-llms-txt` | scrape | false | Disable `/llms.txt` detection for bare domains |
-| `--force-browser` | scrape | false | Always render via the configured browser (skips JS-shell detection; composes with `--raw`/`--select`) |
-| `--concurrency` | scrape | 5 | Max concurrent requests (multi-URL scrape) |
-| `--no-cache` | scrape, crawl | false | Bypass page cache |
-| `--depth` | crawl | 3 | Max BFS depth |
-| `--concurrency` | crawl | 8 | Worker pool size |
-| `--sitemap` | crawl | false | Treat seed URL as sitemap |
-| `--background` | crawl | false | Run in background, return crawl ID |
-| `--allow` | crawl | — | Path substring filters (any match passes) |
-| `--deny` | crawl | — | Regex deny patterns |
-| `--regex` | code | false | Interpret query as regex (grep, sourcegraph) |
-| `--lang` | code | — | Language qualifier (appended to query) |
-| `--library` | docs | — | Context7 library ID, skips resolve |
-| `--tokens` | docs | 4000 | Context7 token budget |
-| `--resolve` | docs | false | Resolve library name instead of searching |
+- **Stateless, single binary.** No daemon, no server to keep alive — call, get a result, exit.
+- **Documented exit codes**, not just stderr text, for scripted control flow: `2` bad input, `3` not found, `4` upstream/network failure, `5` missing precondition (e.g. no API key), `6` cancelled (SIGINT/SIGTERM).
+- **Automatic JS-rendering fallback.** `ketch scrape` and `ketch crawl` detect JS-shell pages (React/Vue/Svelte SPAs, streaming hydration frameworks) and transparently re-fetch via headless Chrome when needed — same output shape either way.
+- **Smart input detection on `scrape`.** Single URL, multiple positional args, a JSON array, a file of URLs, or stdin — no `--batch` flag required.
+- **Page cache.** Fetches are cached (bbolt, default TTL 72h); repeat scrapes and crawls return instantly. `--no-cache` bypasses it.
+- **One discovery call.** `ketch config` returns the full effective configuration and active backends as JSON, so an agent can inspect capabilities without parsing `--help` text.
 
 ## Configuration
 
 ketch reads defaults from `~/.config/ketch/config.json`. Flags always override config values.
 
 ```sh
-# Create a default config file
-ketch config init
-
-# Set a default backend
-ketch config set backend searxng
-
-# Set your SearXNG URL
+ketch config init                          # write a default config file
+ketch config set backend searxng           # set a default backend
 ketch config set searxng_url http://my-searxng:8080
-
-# Configure browser for JS-rendered pages
-ketch config set browser chrome
-
-# View effective config + available backends
-ketch config
+ketch config set browser chrome            # enable browser fallback for JS-rendered pages
+ketch config                               # print effective config + available backends
+ketch config path                          # print the config file path
 ```
 
-```json
-{
-  "config_path": "/home/user/.config/ketch/config.json",
-  "backend": "brave",
-  "searxng_url": "http://localhost:8081",
-  "limit": 5,
-  "cache_ttl": "72h",
-  "code_backend": "grepapp",
-  "docs_backend": "context7",
-  "sourcegraph_url": "https://sourcegraph.com",
-  "github_token_source": "gh-cli",
-  "available_backends": ["brave", "ddg", "searxng", "exa"],
-  "available_code_backends": ["grepapp", "sourcegraph", "github"],
-  "available_doc_backends": ["context7", "local"]
-}
-```
-
-### Search Backends (ketch search)
-
-| Backend | Setup | Notes |
-|---------|-------|-------|
-| `brave` (default) | Free API key from brave.com/search/api | Stable JSON API |
-| `ddg` | Zero config | Rate-limited by DDG currently |
-| `searxng` | Self-hosted instance | Most reliable for heavy use |
-| `exa` | Zero config via hosted MCP; optional `ketch config set exa_api_key <key>` | AI-oriented search with snippets/content from Exa |
-
-### Code Backends (ketch code)
-
-| Backend | Setup | Notes |
-|---------|-------|-------|
-| `grepapp` (default) | Zero config | Grep MCP (`mcp.grep.app`), no token, literal/regex over 1M+ public repos |
-| `sourcegraph` | Zero config | Grep-style, ~1M OSS repos, exact line matches, SSE stream, archived/fork filters |
-| `github` | `gh auth login` _or_ `ketch config set github_token <tok>` _or_ `$GITHUB_TOKEN` | REST `/search/code` + GraphQL stars batch. 30 req/min cap. Token must have `repo` scope. |
-
-```bash
-ketch code "http.NewRequestWithContext" --lang go
-ketch code "NewRequestWith.*Context" --regex
-ketch code "rate limit middleware" --lang go -b github --limit 10
-ketch config set sourcegraph_url https://sourcegraph.com  # optional, for self-hosted
-ketch config set github_token ghp_xxx                     # explicit token
-```
-
-### Docs Backends (ketch docs)
-
-| Backend | Setup | Notes |
-|---------|-------|-------|
-| `context7` (default) | Free key: `ketch config set context7_api_key <key>` | Curated snippets + prose, version-aware |
-| `local` | _planned_ | FTS5 SQLite for offline/private docs (not yet implemented) |
-
-```bash
-ketch config set context7_api_key ctx7sk_...
-ketch docs "how to render with word wrap" --library /charmbracelet/glamour
-ketch docs "middleware authentication"          # context7 auto-resolves library
-ketch docs --resolve "glamour"                 # list matching library IDs
-```
-
-### What's Next
-
-1. Local FTS5 SQLite docs backend (`-b local`) for offline/private docs
+Other configurable keys include per-backend API keys and URLs (`brave_api_key`, `context7_api_key`, `github_token`, `sourcegraph_url`, `exa_api_key`), `cache_ttl`, `url_rewrites` (regex rewrite rules applied before fetch), and `spa_markers` (extra JS-shell detection tokens). See the [config reference](https://1broseidon.github.io/ketch/) for the full list.
 
 ## Agent integration
 
-ketch is built to be called by AI agents. The operator configures the backend once; the agent just calls `ketch search` and `ketch scrape` without needing to know the infrastructure details.
-
-Add this to your agent's system prompt (`CLAUDE.md`, `AGENTS.md`, or equivalent):
+Point an agent's system prompt at ketch instead of teaching it individual search/scrape APIs:
 
 ```markdown
-## Web, Code, and Docs Research
-
-Use `ketch` CLI for all external research — web pages, OSS code, library docs.
-- Web search: `ketch search "query"` — titles, URLs, snippets
-- Web search + full content: `ketch search "query" --scrape`
-- Scrape: `ketch scrape <url>` — fetches a URL and returns clean markdown
-- Batch scrape: `ketch scrape <url1> <url2> ...` — concurrent fetch
-- Crawl: `ketch crawl <url> --sitemap --background` — crawl a site, poll with `ketch crawl status`
-- Code search: `ketch code "query" --lang go` — real OSS code with line + repo + stars
-- Library docs: `ketch docs "query" --library /org/repo` — version-aware curated snippets
-- JS-rendered pages are handled automatically — if a page returns a loading shell, ketch re-fetches it with a headless browser.
-- All commands support `--json` for structured output.
-- Discovery: `ketch config` — returns effective config and available backends as JSON.
-- The operator has already configured the search/code/docs backends and browser. Do not override unless you have a specific reason.
+Use `ketch` for external research — web pages, OSS code, library docs.
+- `ketch search "query"` / `ketch search "query" --scrape` for web results with optional full content
+- `ketch scrape <url> [url...]` for clean markdown from one or more URLs
+- `ketch code "query" --lang go` for real OSS code with repo/line context
+- `ketch docs "query" --library /org/repo` for version-aware library docs
+- All commands support `--json`. `ketch config` reports active backends.
 ```
 
-### Why this works
+The operator configures backends once; the agent's prompt never needs to mention which provider is behind `ketch search`.
 
-An agent calling a web search API typically needs to know which provider to use, manage API keys, and handle provider-specific response formats. ketch collapses that: the operator runs `ketch config set backend searxng` (or `ketch config set code_backend github`, `ketch config set docs_backend context7`) once, and every agent invocation uses the right backend automatically. The agent's system prompt doesn't mention backends at all — it just says "use ketch."
+### MCP server
 
-`ketch config` returns the full discovery payload as JSON — including which search, code, and docs backends are active and which token source is in effect — so an agent that needs to inspect capabilities can do so in one call without parsing help text.
+For agents that speak MCP instead of shelling out, `ketch mcp serve` runs the same five surfaces — `search`, `code`, `docs`, `scrape`, `crawl` — as MCP tools over stdio, using the same config and backends as the CLI. To register it with Claude Code:
+
+```sh
+claude mcp add ketch -- ketch mcp serve
+```
+
+Tool errors carry the exit-code taxonomy as stable message prefixes: `[validation]`, `[not_found]`, `[upstream]`, `[precondition]`, `[cancelled]`.
+
+## Contributing
+
+Issues and pull requests are welcome at [github.com/1broseidon/ketch](https://github.com/1broseidon/ketch).
 
 ## License
 
