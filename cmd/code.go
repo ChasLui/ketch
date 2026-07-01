@@ -94,23 +94,12 @@ func runCode(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// newCodeSearcher resolves the backend via the shared code.NewFromConfig and
+// maps constructor errors to CLI exit codes.
 func newCodeSearcher(backend string) (code.Searcher, error) {
-	switch backend {
-	case "sourcegraph":
-		return code.NewSourcegraph(cfg.SourcegraphURL), nil
-	case "grepapp":
-		return code.NewGrepApp(), nil
-	case "github":
-		token, source := cfg.ResolveGithubToken()
-		if token == "" {
-			return nil, exitErrf(ExitPrecondition, `github code search: no token found.
-  - explicit:   ketch config set github_token <token>
-  - env var:    export GITHUB_TOKEN=<token>
-  - or run:     gh auth login`)
-		}
-		_ = source
-		return code.NewGitHub(token), nil
-	default:
-		return nil, exitErrf(ExitValidation, "unknown code backend: %s", backend)
+	s, err := code.NewFromConfig(&cfg, backend)
+	if err != nil {
+		return nil, backendErr(err, code.ErrUnknownBackend)
 	}
+	return s, nil
 }

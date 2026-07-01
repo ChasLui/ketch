@@ -136,16 +136,12 @@ func printDocsResults(query, backend, library string, results []docs.Result, min
 	}
 }
 
+// newDocSearcher resolves the backend via the shared docs.NewFromConfig and
+// maps constructor errors to CLI exit codes.
 func newDocSearcher(backend string) (docs.Searcher, error) {
-	switch backend {
-	case "context7":
-		if cfg.Context7APIKey == "" {
-			return nil, exitErrf(ExitPrecondition, "context7: API key not set (get one then: ketch config set context7_api_key <key>)")
-		}
-		return docs.NewContext7(cfg.Context7APIKey), nil
-	case "local":
-		return docs.NewFTS5Local(), nil
-	default:
-		return nil, exitErrf(ExitValidation, "unknown docs backend: %s", backend)
+	s, err := docs.NewFromConfig(&cfg, backend)
+	if err != nil {
+		return nil, backendErr(err, docs.ErrUnknownBackend)
 	}
+	return s, nil
 }

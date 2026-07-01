@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/1broseidon/ketch/config"
 	"github.com/1broseidon/ketch/scrape"
 )
 
@@ -57,6 +58,17 @@ func New(ttl time.Duration) *Cache {
 // isolate the cache (temp bbolt path) from the user's real cache dir.
 func NewWithStore(store Store, ttl time.Duration) *Cache {
 	return &Cache{store: store, ttl: ttl}
+}
+
+// NewFromConfig creates a cache with the TTL parsed from cfg.CacheTTL,
+// falling back to one hour if the value doesn't parse. Returns nil (a valid,
+// no-op cache — all methods are nil-safe) if the cache cannot be initialized.
+func NewFromConfig(cfg *config.Config) *Cache {
+	ttl, err := time.ParseDuration(cfg.CacheTTL)
+	if err != nil {
+		ttl = time.Hour
+	}
+	return New(ttl)
 }
 
 // NewReadOnly opens the cache for reading only.

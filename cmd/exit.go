@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -34,6 +35,17 @@ func (e *ExitError) Unwrap() error { return e.Err }
 // exitErrf builds a freshly-formatted ExitError.
 func exitErrf(code int, format string, args ...any) error {
 	return &ExitError{Code: code, Err: fmt.Errorf(format, args...)}
+}
+
+// backendErr classifies a backend-constructor error (search/code/docs
+// NewFromConfig): errors wrapping the package's unknown-backend sentinel are
+// validation failures (exit 2); anything else (missing API key/token,
+// unimplemented backend) is a precondition failure (exit 5).
+func backendErr(err, unknown error) error {
+	if errors.Is(err, unknown) {
+		return &ExitError{Code: ExitValidation, Err: err}
+	}
+	return &ExitError{Code: ExitPrecondition, Err: err}
 }
 
 // exitArgs wraps a cobra arg validator so its rejection becomes exit 2 instead

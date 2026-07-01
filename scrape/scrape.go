@@ -117,7 +117,12 @@ func NewWithBrowserConn(conn BrowserConn, rw *urlrewrite.Rewriter) *Scraper {
 }
 
 // HasBrowser reports whether this scraper has browser fallback configured.
+// Guarded by browserMu because getBrowser clears browserBin on failed
+// resolution — concurrent callers (MCP tool calls, multi-URL scrapes) must
+// not race that write.
 func (s *Scraper) HasBrowser() bool {
+	s.browserMu.Lock()
+	defer s.browserMu.Unlock()
 	return s.browserBin != ""
 }
 
@@ -137,11 +142,11 @@ func (s *Scraper) Close() {
 }
 
 func (s *Scraper) getBrowser() BrowserConn {
+	s.browserMu.Lock()
+	defer s.browserMu.Unlock()
 	if s.browserBin == "" {
 		return nil
 	}
-	s.browserMu.Lock()
-	defer s.browserMu.Unlock()
 	if s.browser != nil {
 		return s.browser
 	}
@@ -321,7 +326,7 @@ func (s *Scraper) browserFetchOrWarn(ctx context.Context, rawURL, html string) (
 			return rendered, SourceBrowser
 		}
 		fmt.Fprintf(os.Stderr, "warn: browser fallback failed for %s: %v\n", rawURL, err)
-	} else if s.browserBin == "" {
+	} else if !s.HasBrowser() {
 		fmt.Fprintf(os.Stderr, "warn: %s appears JS-rendered; configure browser for full content\n", rawURL)
 	}
 	return html, SourceHTTPShell

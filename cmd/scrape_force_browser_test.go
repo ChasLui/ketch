@@ -42,7 +42,7 @@ func TestForceBrowserMarkdownRendersUnconditionally(t *testing.T) {
 	s := scrape.NewWithBrowserConn(fb, nil)
 	pc := newTestCache(t, time.Hour)
 
-	page, err := cachedScrapeForce(context.Background(), s, pc, "https://x.test/p")
+	page, err := s.CachedScrapeForce(context.Background(), pc, "https://x.test/p")
 	if err != nil {
 		t.Fatalf("cachedScrapeForce: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestForceBrowserRawEmitsRenderedHTML(t *testing.T) {
 	s := scrape.NewWithBrowserConn(fb, nil)
 	pc := newTestCache(t, time.Hour)
 
-	page, rawHTML, source, err := cachedScrapeRawForce(context.Background(), s, pc, "https://x.test/p")
+	page, rawHTML, source, err := s.CachedScrapeRawForce(context.Background(), pc, "https://x.test/p")
 	if err != nil {
 		t.Fatalf("cachedScrapeRawForce: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestForceBrowserIgnoresHTTPCacheEntry(t *testing.T) {
 	// Prime a stale SourceHTTP entry (the unrendered static page).
 	pc.Put("https://x.test/p", &scrape.Page{URL: "https://x.test/p", Title: "Pricing", Markdown: "stale http content"}, scrape.SourceHTTP)
 
-	page, err := cachedScrapeForce(context.Background(), s, pc, "https://x.test/p")
+	page, err := s.CachedScrapeForce(context.Background(), pc, "https://x.test/p")
 	if err != nil {
 		t.Fatalf("cachedScrapeForce: %v", err)
 	}
@@ -155,14 +155,14 @@ func TestForceBrowserReusesBrowserCacheEntry(t *testing.T) {
 	s := scrape.NewWithBrowserConn(fb, nil)
 	pc := newTestCache(t, time.Hour)
 
-	if _, err := cachedScrapeForce(context.Background(), s, pc, "https://x.test/p"); err != nil {
+	if _, err := s.CachedScrapeForce(context.Background(), pc, "https://x.test/p"); err != nil {
 		t.Fatalf("first cachedScrapeForce: %v", err)
 	}
 	if fb.calls.Load() != 1 {
 		t.Fatalf("after first call renders = %d, want 1", fb.calls.Load())
 	}
 
-	if _, err := cachedScrapeForce(context.Background(), s, pc, "https://x.test/p"); err != nil {
+	if _, err := s.CachedScrapeForce(context.Background(), pc, "https://x.test/p"); err != nil {
 		t.Fatalf("second cachedScrapeForce: %v", err)
 	}
 	if fb.calls.Load() != 1 {

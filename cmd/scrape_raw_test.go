@@ -103,7 +103,7 @@ func TestCachedScrapeRawReturnsHTMLAndHTTPSource(t *testing.T) {
 	s := scrape.NewWithRewriter("", nil)
 	pc := newTestCache(t, time.Hour)
 
-	page, rawHTML, source, err := cachedScrapeRaw(context.Background(), s, pc, srv.URL+"/pricing")
+	page, rawHTML, source, err := s.CachedScrapeRaw(context.Background(), pc, srv.URL+"/pricing")
 	if err != nil {
 		t.Fatalf("cachedScrapeRaw: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestCachedScrapeRawNoCacheBypassesCache(t *testing.T) {
 	srv, hits := staticServer(t)
 	s := scrape.NewWithRewriter("", nil)
 
-	_, rawHTML, source, err := cachedScrapeRaw(context.Background(), s, nil, srv.URL+"/p")
+	_, rawHTML, source, err := s.CachedScrapeRaw(context.Background(), nil, srv.URL+"/p")
 	if err != nil {
 		t.Fatalf("cachedScrapeRaw nil cache: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestCachedScrapeRawMarkdownOnlyEntryDoesNotPoisonRaw(t *testing.T) {
 	pc := newTestCache(t, time.Hour)
 
 	// 1. Prime a markdown-only entry via the markdown path.
-	if _, err := cachedScrape(context.Background(), s, pc, srv.URL+"/p"); err != nil {
+	if _, err := s.CachedScrape(context.Background(), pc, srv.URL+"/p"); err != nil {
 		t.Fatalf("prime cachedScrape: %v", err)
 	}
 	primeHits := hits.Load()
@@ -163,7 +163,7 @@ func TestCachedScrapeRawMarkdownOnlyEntryDoesNotPoisonRaw(t *testing.T) {
 	}
 
 	// 3. --raw must refetch and back-fill, NOT serve empty HTML.
-	page, rawHTML, source, err := cachedScrapeRaw(context.Background(), s, pc, srv.URL+"/p")
+	page, rawHTML, source, err := s.CachedScrapeRaw(context.Background(), pc, srv.URL+"/p")
 	if err != nil {
 		t.Fatalf("cachedScrapeRaw after markdown prime: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestCachedScrapeRawMarkdownOnlyEntryDoesNotPoisonRaw(t *testing.T) {
 	// 4. The refetched entry now round-trips: a second --raw is served from
 	// cache without a further fetch.
 	secondBefore := hits.Load()
-	if _, raw2, _, err := cachedScrapeRaw(context.Background(), s, pc, srv.URL+"/p"); err != nil {
+	if _, raw2, _, err := s.CachedScrapeRaw(context.Background(), pc, srv.URL+"/p"); err != nil {
 		t.Fatalf("second cachedScrapeRaw: %v", err)
 	} else if raw2 == "" {
 		t.Fatalf("second --raw served empty HTML — back-fill did not persist")

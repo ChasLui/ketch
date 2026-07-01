@@ -9,6 +9,7 @@ import (
 
 	"github.com/1broseidon/ketch/cache"
 	"github.com/1broseidon/ketch/config"
+	"github.com/1broseidon/ketch/extract"
 	"github.com/1broseidon/ketch/scrape"
 	"github.com/1broseidon/ketch/search"
 	"github.com/spf13/cobra"
@@ -93,7 +94,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 func searchScrape(ctx context.Context, results []search.Result, scraper *scrape.Scraper, pc *cache.Cache, asJSON bool, trim bool, maxChars int, minimal bool) error {
 	if asJSON {
 		for i, r := range results {
-			page, err := cachedScrape(ctx, scraper, pc, r.URL)
+			page, err := scraper.CachedScrape(ctx, pc, r.URL)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "warn: failed to scrape %s: %v\n", r.URL, err)
 				continue
@@ -101,19 +102,19 @@ func searchScrape(ctx context.Context, results []search.Result, scraper *scrape.
 			if page.FetchedURL != "" {
 				results[i].FetchedURL = page.FetchedURL
 			}
-			results[i].Content = postProcess(page.Markdown, trim, maxChars)
+			results[i].Content = extract.PostProcess(page.Markdown, trim, maxChars)
 		}
 		return json.NewEncoder(os.Stdout).Encode(results)
 	}
 
 	if minimal {
 		for _, r := range results {
-			page, err := cachedScrape(ctx, scraper, pc, r.URL)
+			page, err := scraper.CachedScrape(ctx, pc, r.URL)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "warn: failed to scrape %s: %v\n", r.URL, err)
 				continue
 			}
-			content := postProcess(page.Markdown, trim, maxChars)
+			content := extract.PostProcess(page.Markdown, trim, maxChars)
 			snippet := firstLine(content)
 			fmt.Printf("%s\t%s\t%s\n", r.URL, page.Title, snippet)
 		}
@@ -121,7 +122,7 @@ func searchScrape(ctx context.Context, results []search.Result, scraper *scrape.
 	}
 
 	for i, r := range results {
-		page, err := cachedScrape(ctx, scraper, pc, r.URL)
+		page, err := scraper.CachedScrape(ctx, pc, r.URL)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warn: failed to scrape %s: %v\n", r.URL, err)
 			continue
@@ -129,7 +130,7 @@ func searchScrape(ctx context.Context, results []search.Result, scraper *scrape.
 		if page.FetchedURL != "" {
 			results[i].FetchedURL = page.FetchedURL
 		}
-		content := postProcess(page.Markdown, trim, maxChars)
+		content := extract.PostProcess(page.Markdown, trim, maxChars)
 		if i > 0 {
 			fmt.Println()
 		}
@@ -147,25 +148,13 @@ func searchScrape(ctx context.Context, results []search.Result, scraper *scrape.
 	return nil
 }
 
+// newSearcher resolves the backend via the shared search.NewFromConfig and
+// maps constructor errors to CLI exit codes.
 func newSearcher(cmd *cobra.Command, backend string) (search.Searcher, error) {
-	switch backend {
-	case "brave":
-		if cfg.BraveAPIKey == "" {
-			return nil, exitErrf(ExitPrecondition, "brave: API key not set (get one free at https://brave.com/search/api/ then: ketch config set brave_api_key <key>)")
-		}
-		return search.NewBrave(cfg.BraveAPIKey), nil
-	case "searxng":
-		url, _ := cmd.Flags().GetString("searxng-url")
-		return search.NewSearXNG(url), nil
-	case "ddg":
-		return search.NewDDG(), nil
-	case "exa":
-		var apiKey *string
-		if cfg.ExaAPIKey != "" {
-			apiKey = &cfg.ExaAPIKey
-		}
-		return search.NewEXA(apiKey), nil
-	default:
-		return nil, exitErrf(ExitValidation, "unknown backend: %s", backend)
+	searxngURL, _ := cmd.Flags().GetString("searxng-url")
+	s, err := search.NewFromConfig(&cfg, backend, searxngURL)
+	if err != nil {
+		return nil, backendErr(err, search.ErrUnknownBackend)
 	}
+	return s, nil
 }
