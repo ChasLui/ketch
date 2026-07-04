@@ -38,6 +38,12 @@ func NewFromConfig(cfg *config.Config, backend, searxngURL string) (Searcher, er
 			apiKey = &cfg.ExaAPIKey
 		}
 		return NewEXA(apiKey), nil
+	case "keenable":
+		var apiKey *string
+		if cfg.KeenableAPIKey != "" {
+			apiKey = &cfg.KeenableAPIKey
+		}
+		return NewKeenable(apiKey), nil
 	default:
 		return nil, fmt.Errorf("%w %q (available: %s)", ErrUnknownBackend, backend, strings.Join(config.AvailableBackends(), ", "))
 	}

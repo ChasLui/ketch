@@ -6,6 +6,7 @@ This page mirrors the canonical [`CHANGELOG.md`](https://github.com/1broseidon/k
 
 **Added**
 
+- `keenable` web search backend over the Keenable index, built for AI agents. Keyless by default (public endpoint, rate-limited); an optional `keenable_api_key` lifts the rate limit.
 - `exa` web search backend via Exa's hosted MCP endpoint, with optional `exa_api_key` config for authenticated usage.
 
 ## v0.9.3 — 2026-05-29

@@ -4,7 +4,7 @@ ketch has three search surfaces, each with its own backends: web search (`ketch 
 
 ## Web Search Backends
 
-ketch supports four web-search backends. Set the default with `ketch config set backend <name>`.
+ketch supports five web-search backends. Set the default with `ketch config set backend <name>`.
 
 ## Brave (default)
 
@@ -60,6 +60,21 @@ ketch config set backend exa
 ```
 
 **Recommended for:** agent workflows that benefit from Exa's clean result snippets and content-oriented search output.
+
+## Keenable
+
+Web search built for AI agents, backed by the Keenable index. Keyless by default — it works with no account or key against the public endpoint (rate-limited); an optional API key lifts the hourly cap.
+
+**Setup:** None. Optional key to lift the rate limit:
+
+```sh
+ketch config set keenable_api_key <your-key>
+ketch config set backend keenable
+```
+
+Create a key at [keenable.ai/console](https://keenable.ai/console).
+
+**Recommended for:** agent workflows that want a zero-config, agent-oriented search backend without provisioning a provider key up front.
 
 ## Code Search Backends
 

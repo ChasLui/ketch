@@ -20,12 +20,13 @@ import (
 // Production endpoints. Probes take these as parameters so tests can point
 // them at httptest servers.
 const (
-	braveEndpoint   = "https://api.search.brave.com/res/v1/web/search"
-	ddgEndpoint     = "https://html.duckduckgo.com/html/"
-	grepAppEndpoint = "https://mcp.grep.app"
-	exaMCPEndpoint  = "https://mcp.exa.ai/mcp"
-	githubAPIBase   = "https://api.github.com"
-	context7APIBase = "https://context7.com"
+	braveEndpoint    = "https://api.search.brave.com/res/v1/web/search"
+	ddgEndpoint      = "https://html.duckduckgo.com/html/"
+	grepAppEndpoint  = "https://mcp.grep.app"
+	exaMCPEndpoint   = "https://mcp.exa.ai/mcp"
+	keenableEndpoint = "https://api.keenable.ai"
+	githubAPIBase    = "https://api.github.com"
+	context7APIBase  = "https://context7.com"
 )
 
 // ddgUA mirrors the search backend's user agent — DDG's HTML endpoint rejects
@@ -85,6 +86,44 @@ func probeBrave(ctx context.Context, client *http.Client, endpoint, apiKey strin
 		return StatusMisconfigured, "API key rejected (ketch config set brave_api_key <key>)"
 	case http.StatusTooManyRequests:
 		return StatusOK, "reachable, key accepted (rate limited)"
+	default:
+		return StatusUnreachable, fmt.Sprintf("returned status %d", resp.StatusCode)
+	}
+}
+
+// probeKeenable checks the Keenable search API with a minimal query. Keenable
+// is keyless by default (public endpoint); a configured key switches to the
+// authenticated endpoint, so a rejected key surfaces as misconfigured.
+func probeKeenable(ctx context.Context, client *http.Client, base, apiKey string) (Status, string) {
+	key := strings.TrimSpace(apiKey)
+	path := "/v1/search/public"
+	if key != "" {
+		path = "/v1/search"
+	}
+	body := strings.NewReader(`{"query":"ketch","mode":"pro"}`)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+path, body)
+	if err != nil {
+		return StatusUnreachable, probeErrDetail(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Keenable-Title", "Ketch")
+	if key != "" {
+		req.Header.Set("X-API-Key", key)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return StatusUnreachable, probeErrDetail(err)
+	}
+	defer drain(resp)
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return StatusOK, ""
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return StatusMisconfigured, "API key rejected (ketch config set keenable_api_key <key>)"
+	case http.StatusTooManyRequests:
+		return StatusOK, "reachable (rate limited; set a key to lift the cap)"
 	default:
 		return StatusUnreachable, fmt.Sprintf("returned status %d", resp.StatusCode)
 	}

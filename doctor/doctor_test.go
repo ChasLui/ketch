@@ -193,6 +193,44 @@ func TestProbeMCPServerError(t *testing.T) {
 	}
 }
 
+// --- keenable ---
+
+func TestProbeKeenableKeyless(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if got := r.URL.Path; got != "/v1/search/public" {
+			t.Errorf("path = %q, want /v1/search/public (keyless)", got)
+		}
+		if got := r.Header.Get("X-API-Key"); got != "" {
+			t.Errorf("X-API-Key = %q, want empty for keyless", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	status, detail := probeKeenable(testCtx(t), ts.Client(), ts.URL, "")
+	if status != StatusOK {
+		t.Fatalf("status = %q (detail %q), want ok", status, detail)
+	}
+}
+
+func TestProbeKeenableKeyRejected(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/v1/search" {
+			t.Errorf("path = %q, want /v1/search (keyed)", got)
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer ts.Close()
+
+	status, _ := probeKeenable(testCtx(t), ts.Client(), ts.URL, "bad-key")
+	if status != StatusMisconfigured {
+		t.Fatalf("status = %q, want misconfigured", status)
+	}
+}
+
 // --- sourcegraph reachability ---
 
 func TestProbeReachable(t *testing.T) {
@@ -360,6 +398,9 @@ func TestBuildSpecsRequiredGating(t *testing.T) {
 	}
 	if s := findSpec(t, specs, "search", "ddg"); s.required {
 		t.Error("ddg not default must be informational")
+	}
+	if s := findSpec(t, specs, "search", "keenable"); s.required {
+		t.Error("keenable without a key and not default must be informational")
 	}
 	if s := findSpec(t, specs, "code", "grepapp"); !s.required {
 		t.Error("default code backend must be required")

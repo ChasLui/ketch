@@ -12,7 +12,7 @@ ketch search <query> [flags]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--backend, -b` | `brave` | Search backend: `brave`, `ddg`, `searxng`, `exa` |
+| `--backend, -b` | `brave` | Search backend: `brave`, `ddg`, `searxng`, `exa`, `keenable` |
 | `--limit, -l` | `5` | Max number of results |
 | `--scrape` | `false` | Fetch full content from each result |
 | `--minimal` | `false` | One result per line, tab-separated |
@@ -30,6 +30,7 @@ ketch search "rust async" --limit 10
 ketch search "python web scraping" --scrape
 ketch search "query" --backend searxng
 ketch search "query" --backend exa
+ketch search "query" --backend keenable
 ketch search "query" --json
 ```
 

@@ -29,7 +29,7 @@ The discovery payload:
   "sourcegraph_url": "https://sourcegraph.com",
   "github_token_source": "none",
   "github_token_set": false,
-  "available_backends": ["brave", "ddg", "searxng", "exa"],
+  "available_backends": ["brave", "ddg", "searxng", "exa", "keenable"],
   "available_code_backends": ["grepapp", "sourcegraph", "github"],
   "available_doc_backends": ["context7"]
 }
@@ -48,6 +48,7 @@ ketch config set backend searxng
 ketch config set brave_api_key BSA...
 ketch config set searxng_url http://my-searxng:8080
 ketch config set exa_api_key exa...
+ketch config set keenable_api_key keen_...
 ketch config set limit 10
 ketch config set cache_ttl 4h
 ketch config set browser chrome
@@ -63,9 +64,10 @@ ketch config set github_token ghp_...
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `backend` | `brave` | Default search backend: `brave`, `ddg`, `searxng`, `exa` |
+| `backend` | `brave` | Default search backend: `brave`, `ddg`, `searxng`, `exa`, `keenable` |
 | `brave_api_key` | — | Brave Search API key ([get one free](https://brave.com/search/api/)) |
 | `exa_api_key` | — | Optional Exa API key for authenticated hosted MCP usage |
+| `keenable_api_key` | — | Optional Keenable API key; keyless by default, a key lifts the rate limit ([console](https://keenable.ai/console)) |
 | `searxng_url` | `http://localhost:8081` | SearXNG instance URL |
 | `limit` | `5` | Default max results (shared by `search`, `code`, `docs`) |
 
@@ -87,7 +89,7 @@ ketch config set github_token ghp_...
 | `browser` | — | Browser for JS-rendered pages: `chrome`, `chromium`, or absolute path |
 | `url_rewrites` | — | Ordered regex rewrite rules applied before every fetch (see below) |
 
-Secrets (`brave_api_key`, `exa_api_key`, `context7_api_key`, `github_token`) are stored in
+Secrets (`brave_api_key`, `exa_api_key`, `keenable_api_key`, `context7_api_key`, `github_token`) are stored in
 plaintext in `config.json`; protect the file accordingly.
 
 ## URL Rewrites
