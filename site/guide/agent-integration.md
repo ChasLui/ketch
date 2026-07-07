@@ -79,6 +79,7 @@ ketch scrape https://help.example.com/s/article/1234
   "brave_api_key_set": false,
   "exa_api_key_set": false,
   "firecrawl_api_key_set": false,
+  "keenable_api_key_set": false,
   "limit": 5,
   "cache_ttl": "72h",
   "browser": "chrome",

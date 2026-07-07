@@ -65,6 +65,7 @@ On older ketch versions without `doctor`, configured-state detection is imperfec
    Right for: self-hosting preference, heavy volume, privacy.
 4. **exa — hosted alternative.** Works with zero config; `exa_api_key` exists for keyed use.
 5. **firecrawl — same provider as scrape/crawl.** Needs a key: `ketch config set firecrawl_api_key <key>` (get one at firecrawl.dev), then `ketch config set backend firecrawl`.
+6. **keenable — keyless by default.** Works with no key against the public endpoint (rate-limited); an optional `ketch config set keenable_api_key <key>` lifts the cap. Select with `ketch config set backend keenable`.
 
 ---
 

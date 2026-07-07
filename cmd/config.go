@@ -25,6 +25,7 @@ type configInfo struct {
 	BraveAPIKeySet        bool              `json:"brave_api_key_set"`
 	ExaAPIKeySet          bool              `json:"exa_api_key_set"`
 	FirecrawlAPIKeySet    bool              `json:"firecrawl_api_key_set"`
+	KeenableAPIKeySet     bool              `json:"keenable_api_key_set"`
 	Limit                 int               `json:"limit"`
 	CacheTTL              string            `json:"cache_ttl"`
 	Browser               string            `json:"browser,omitempty"`
@@ -86,6 +87,7 @@ func runConfigShow(_ *cobra.Command, _ []string) error {
 		BraveAPIKeySet:        c.BraveAPIKey != "",
 		ExaAPIKeySet:          c.ExaAPIKey != "",
 		FirecrawlAPIKeySet:    c.FirecrawlAPIKey != "",
+		KeenableAPIKeySet:     c.KeenableAPIKey != "",
 		Limit:                 c.Limit,
 		CacheTTL:              c.CacheTTL,
 		Browser:               c.Browser,
