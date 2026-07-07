@@ -43,6 +43,12 @@ func NewFromConfig(cfg *config.Config, backend, searxngURL string) (Searcher, er
 			return nil, fmt.Errorf("firecrawl: API key not set (get one free at https://firecrawl.dev then: ketch config set firecrawl_api_key <key>)")
 		}
 		return NewFirecrawl(cfg.FirecrawlAPIKey), nil
+	case "keenable":
+		var apiKey *string
+		if cfg.KeenableAPIKey != "" {
+			apiKey = &cfg.KeenableAPIKey
+		}
+		return NewKeenable(apiKey), nil
 	default:
 		return nil, fmt.Errorf("%w %q (available: %s)", ErrUnknownBackend, backend, strings.Join(config.AvailableBackends(), ", "))
 	}

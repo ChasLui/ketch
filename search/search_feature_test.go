@@ -635,6 +635,168 @@ func TestFeatureFirecrawlServerError(t *testing.T) {
 	}
 }
 
+func TestFeatureKeenableSearchParses(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{
+			"results": [
+				{"title": "Go Docs", "url": "https://go.dev/doc/", "description": "Go documentation"},
+				{"title": "Go Blog", "url": "https://go.dev/blog/", "description": "The Go Blog"}
+			]
+		}`)
+	}))
+	defer server.Close()
+
+	k := &Keenable{client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	results, err := k.Search(context.Background(), "golang", 5)
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d results, want 2", len(results))
+	}
+	if results[0].Title != "Go Docs" {
+		t.Errorf("title = %q, want %q", results[0].Title, "Go Docs")
+	}
+	if results[0].URL != "https://go.dev/doc/" {
+		t.Errorf("url = %q, want %q", results[0].URL, "https://go.dev/doc/")
+	}
+	if results[0].Description != "Go documentation" {
+		t.Errorf("description = %q, want %q", results[0].Description, "Go documentation")
+	}
+}
+
+func TestFeatureKeenableKeylessRequestShape(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Method; got != "POST" {
+			t.Errorf("method = %q, want POST", got)
+		}
+		// No key configured => keyless public endpoint, no X-API-Key.
+		if got := r.URL.Path; got != "/v1/search/public" {
+			t.Errorf("path = %q, want /v1/search/public", got)
+		}
+		if got := r.Header.Get("X-API-Key"); got != "" {
+			t.Errorf("X-API-Key = %q, want empty for keyless", got)
+		}
+		if got := r.Header.Get("X-Keenable-Title"); got != "Ketch" {
+			t.Errorf("X-Keenable-Title = %q, want Ketch", got)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if body["query"] != "test query" {
+			t.Errorf("query = %q, want test query", body["query"])
+		}
+		if body["mode"] != "pro" {
+			t.Errorf("mode = %q, want pro", body["mode"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"results":[{"title":"A","url":"https://a.com","description":"a"}]}`)
+	}))
+	defer server.Close()
+
+	k := &Keenable{client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	_, err := k.Search(context.Background(), "test query", 5)
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+}
+
+func TestFeatureKeenableKeyedRequestShape(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A configured key switches to the authenticated endpoint + X-API-Key.
+		if got := r.URL.Path; got != "/v1/search" {
+			t.Errorf("path = %q, want /v1/search", got)
+		}
+		if got := r.Header.Get("X-API-Key"); got != "keen_test" {
+			t.Errorf("X-API-Key = %q, want keen_test", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"results":[{"title":"A","url":"https://a.com","description":"a"}]}`)
+	}))
+	defer server.Close()
+
+	key := "keen_test"
+	k := &Keenable{apiKey: &key, client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	_, err := k.Search(context.Background(), "test", 5)
+	if err != nil {
+		t.Fatalf("Search error: %v", err)
+	}
+}
+
+func TestFeatureKeenableLimitRespected(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"results":[
+			{"title":"A","url":"https://a.com","description":"a"},
+			{"title":"B","url":"https://b.com","description":"b"},
+			{"title":"C","url":"https://c.com","description":"c"}
+		]}`)
+	}))
+	defer server.Close()
+
+	k := &Keenable{client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	results, err := k.Search(context.Background(), "test", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Errorf("got %d results, want 2 (limit)", len(results))
+	}
+}
+
+func TestFeatureKeenableEmptyResults(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"results": []}`)
+	}))
+	defer server.Close()
+
+	k := &Keenable{client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	results, err := k.Search(context.Background(), "nothing", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected empty results, got %d", len(results))
+	}
+}
+
+func TestFeatureKeenable401(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	key := "bad-key"
+	k := &Keenable{apiKey: &key, client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	_, err := k.Search(context.Background(), "test", 5)
+	if err == nil {
+		t.Fatal("expected error for 401 response")
+	}
+}
+
+func TestFeatureKeenableServerError(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	k := &Keenable{client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	_, err := k.Search(context.Background(), "test", 5)
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+}
+
 // rewriteTransport rewrites request URLs to point to the test server.
 type rewriteTransport struct {
 	base   http.RoundTripper

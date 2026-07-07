@@ -12,7 +12,7 @@ ketch search <query> [flags]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--backend, -b` | `brave` | Search backend: `brave`, `ddg`, `searxng`, `exa`, `firecrawl` |
+| `--backend, -b` | `brave` | Search backend: `brave`, `ddg`, `searxng`, `exa`, `firecrawl`, `keenable` |
 | `--limit, -l` | `5` | Max number of results |
 | `--scrape` | `false` | Fetch full content from each result |
 | `--minimal` | `false` | One result per line, tab-separated |
@@ -31,6 +31,7 @@ ketch search "python web scraping" --scrape
 ketch search "query" --backend searxng
 ketch search "query" --backend exa
 ketch search "query" --backend firecrawl
+ketch search "query" --backend keenable
 ketch search "query" --json
 ```
 

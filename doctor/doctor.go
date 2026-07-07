@@ -105,6 +105,7 @@ func buildSpecs(cfg *config.Config, client *http.Client) []spec {
 	braveKey := cfg.BraveAPIKey
 	exaKey := cfg.ExaAPIKey
 	firecrawlKey := cfg.FirecrawlAPIKey
+	keenableKey := cfg.KeenableAPIKey
 	c7Key := cfg.Context7APIKey
 	searxngURL := cfg.SearxngURL
 	sourcegraphURL := cfg.SourcegraphURL
@@ -126,6 +127,9 @@ func buildSpecs(cfg *config.Config, client *http.Client) []spec {
 		}},
 		{"search", "firecrawl", cfg.Backend == "firecrawl" || firecrawlKey != "", func(ctx context.Context) (Status, string) {
 			return probeFirecrawl(ctx, client, firecrawlSearch, firecrawlKey)
+		}},
+		{"search", "keenable", cfg.Backend == "keenable" || keenableKey != "", func(ctx context.Context) (Status, string) {
+			return probeKeenable(ctx, client, keenableEndpoint, keenableKey)
 		}},
 		{"code", "grepapp", cfg.CodeBackend == "grepapp", func(ctx context.Context) (Status, string) {
 			return probeMCP(ctx, client, grepAppEndpoint, "grep.app")

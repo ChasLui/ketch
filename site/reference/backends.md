@@ -4,7 +4,7 @@ ketch has three search surfaces, each with its own backends: web search (`ketch 
 
 ## Web Search Backends
 
-ketch supports five web-search backends. Set the default with `ketch config set backend <name>`.
+ketch supports six web-search backends. Set the default with `ketch config set backend <name>`.
 
 ## Brave (default)
 
@@ -72,6 +72,21 @@ Web search via the [Firecrawl](https://firecrawl.dev) v2 [search API](https://do
 3. Make it the default: `ketch config set backend firecrawl`
 
 **Recommended for:** operators already using Firecrawl for scraping who want a single provider for both search and page extraction. Pair with `--scrape` to fetch full content per result.
+
+## Keenable
+
+Web search built for AI agents, backed by the Keenable index. Keyless by default — it works with no account or key against the public endpoint (rate-limited); an optional API key lifts the hourly cap.
+
+**Setup:** None. Optional key to lift the rate limit:
+
+```sh
+ketch config set keenable_api_key <your-key>
+ketch config set backend keenable
+```
+
+Create a key at [keenable.ai/console](https://keenable.ai/console).
+
+**Recommended for:** agent workflows that want a zero-config, agent-oriented search backend without provisioning a provider key up front.
 
 ## Code Search Backends
 

@@ -7,6 +7,7 @@ This page mirrors the canonical [`CHANGELOG.md`](https://github.com/1broseidon/k
 **Added**
 
 - `firecrawl` web search backend via the [Firecrawl](https://docs.firecrawl.dev) v2 search API, configured with `ketch config set firecrawl_api_key <key>` and selected with `-b firecrawl`. Reports `firecrawl_api_key_set` in `ketch config` discovery and is covered by a live `ketch doctor` probe.
+- `keenable` web search backend over the Keenable index, built for AI agents. Keyless by default (public endpoint, rate-limited); an optional `keenable_api_key` lifts the rate limit.
 - `exa` web search backend via Exa's hosted MCP endpoint, with optional `exa_api_key` config for authenticated usage.
 
 ## v0.9.3 — 2026-05-29

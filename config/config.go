@@ -19,6 +19,7 @@ type Config struct {
 	BraveAPIKey     string            `json:"brave_api_key,omitempty"`
 	ExaAPIKey       string            `json:"exa_api_key,omitempty"`
 	FirecrawlAPIKey string            `json:"firecrawl_api_key,omitempty"`
+	KeenableAPIKey  string            `json:"keenable_api_key,omitempty"`
 	Limit           int               `json:"limit"`
 	CacheTTL        string            `json:"cache_ttl"`
 	Browser         string            `json:"browser,omitempty"` // "chrome", "chromium", or absolute path; empty = disabled
@@ -72,7 +73,7 @@ func Defaults() Config {
 
 // AvailableBackends returns the list of known search backends.
 func AvailableBackends() []string {
-	return []string{"brave", "ddg", "searxng", "exa", "firecrawl"}
+	return []string{"brave", "ddg", "searxng", "exa", "firecrawl", "keenable"}
 }
 
 // AvailableCodeBackends returns the list of known code search backends.
