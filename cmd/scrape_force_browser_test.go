@@ -35,14 +35,21 @@ func (f *fakeBrowser) Fetch(_ context.Context, _ string) (string, error) {
 
 func (f *fakeBrowser) Close() {}
 
+func forceBrowserHTMLURL(t *testing.T) string {
+	t.Helper()
+	srv, _ := staticServer(t)
+	return srv.URL + "/p"
+}
+
 // TestForceBrowserMarkdownRendersUnconditionally — --force-browser markdown path
 // renders via the browser even though staticHTML would detect as "static".
 func TestForceBrowserMarkdownRendersUnconditionally(t *testing.T) {
 	fb := &fakeBrowser{html: renderedHTML}
 	s := scrape.NewWithBrowserConn(fb, nil)
 	pc := newTestCache(t, time.Hour)
+	rawURL := forceBrowserHTMLURL(t)
 
-	page, err := s.CachedScrapeForce(context.Background(), pc, "https://x.test/p")
+	page, err := s.CachedScrapeForce(context.Background(), pc, rawURL)
 	if err != nil {
 		t.Fatalf("cachedScrapeForce: %v", err)
 	}
@@ -60,8 +67,9 @@ func TestForceBrowserRawEmitsRenderedHTML(t *testing.T) {
 	fb := &fakeBrowser{html: renderedHTML}
 	s := scrape.NewWithBrowserConn(fb, nil)
 	pc := newTestCache(t, time.Hour)
+	rawURL := forceBrowserHTMLURL(t)
 
-	page, rawHTML, source, err := s.CachedScrapeRawForce(context.Background(), pc, "https://x.test/p")
+	page, rawHTML, source, err := s.CachedScrapeRawForce(context.Background(), pc, rawURL)
 	if err != nil {
 		t.Fatalf("cachedScrapeRawForce: %v", err)
 	}
@@ -84,8 +92,9 @@ func TestForceBrowserRawEmitsRenderedHTML(t *testing.T) {
 func TestForceBrowserSelectAppliesToRenderedDOM(t *testing.T) {
 	fb := &fakeBrowser{html: renderedHTML}
 	s := scrape.NewWithBrowserConn(fb, nil)
+	rawURL := forceBrowserHTMLURL(t)
 
-	page, err := scrapeURLWithSelector(context.Background(), s, "https://x.test/p", "#prices", true)
+	page, err := scrapeURLWithSelector(context.Background(), s, rawURL, "#prices", true)
 	if err != nil {
 		t.Fatalf("scrapeURLWithSelector force: %v", err)
 	}
@@ -129,11 +138,12 @@ func TestForceBrowserIgnoresHTTPCacheEntry(t *testing.T) {
 	fb := &fakeBrowser{html: renderedHTML}
 	s := scrape.NewWithBrowserConn(fb, nil)
 	pc := newTestCache(t, time.Hour)
+	rawURL := forceBrowserHTMLURL(t)
 
 	// Prime a stale SourceHTTP entry (the unrendered static page).
-	pc.Put("https://x.test/p", &scrape.Page{URL: "https://x.test/p", Title: "Pricing", Markdown: "stale http content"}, scrape.SourceHTTP)
+	pc.Put(rawURL, &scrape.Page{URL: rawURL, Title: "Pricing", Markdown: "stale http content"}, scrape.SourceHTTP)
 
-	page, err := s.CachedScrapeForce(context.Background(), pc, "https://x.test/p")
+	page, err := s.CachedScrapeForce(context.Background(), pc, rawURL)
 	if err != nil {
 		t.Fatalf("cachedScrapeForce: %v", err)
 	}
@@ -154,15 +164,16 @@ func TestForceBrowserReusesBrowserCacheEntry(t *testing.T) {
 	fb := &fakeBrowser{html: renderedHTML}
 	s := scrape.NewWithBrowserConn(fb, nil)
 	pc := newTestCache(t, time.Hour)
+	rawURL := forceBrowserHTMLURL(t)
 
-	if _, err := s.CachedScrapeForce(context.Background(), pc, "https://x.test/p"); err != nil {
+	if _, err := s.CachedScrapeForce(context.Background(), pc, rawURL); err != nil {
 		t.Fatalf("first cachedScrapeForce: %v", err)
 	}
 	if fb.calls.Load() != 1 {
 		t.Fatalf("after first call renders = %d, want 1", fb.calls.Load())
 	}
 
-	if _, err := s.CachedScrapeForce(context.Background(), pc, "https://x.test/p"); err != nil {
+	if _, err := s.CachedScrapeForce(context.Background(), pc, rawURL); err != nil {
 		t.Fatalf("second cachedScrapeForce: %v", err)
 	}
 	if fb.calls.Load() != 1 {

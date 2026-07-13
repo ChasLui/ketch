@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -107,6 +108,9 @@ func readExtractInput(r io.Reader) (string, error) {
 	b, err := io.ReadAll(io.LimitReader(r, scrape.MaxBodyBytes+1))
 	if err != nil {
 		return "", exitErrf(ExitValidation, "failed to read stdin: %w", err)
+	}
+	if bytes.HasPrefix(b, []byte("%PDF-")) {
+		return "", exitErrf(ExitValidation, "PDF input detected. Use `ketch scrape <url>` for PDF extraction.")
 	}
 	if len(b) > scrape.MaxBodyBytes {
 		return "", exitErrf(ExitValidation, "stdin exceeds %d byte limit", scrape.MaxBodyBytes)

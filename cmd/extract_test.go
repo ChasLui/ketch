@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -199,6 +200,39 @@ func TestExtract_EmptyInputExitValidation(t *testing.T) {
 		if exitErr.Code != ExitValidation {
 			t.Errorf("input %q: exit code = %d, want %d", in, exitErr.Code, ExitValidation)
 		}
+	}
+}
+
+func TestExtract_PDFInputExitValidation(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stdin pipe: %v", err)
+	}
+	if _, err := writer.Write([]byte("%PDF-1.7\n")); err != nil {
+		t.Fatalf("write PDF input: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close stdin writer: %v", err)
+	}
+
+	oldStdin := os.Stdin
+	os.Stdin = reader
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+		_ = reader.Close()
+	})
+
+	err = runExtract(extractCmd, nil)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *ExitError, got %T: %v", err, err)
+	}
+	if exitErr.Code != ExitValidation {
+		t.Errorf("exit code = %d, want %d", exitErr.Code, ExitValidation)
+	}
+	const want = "PDF input detected. Use `ketch scrape <url>` for PDF extraction."
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err, want)
 	}
 }
 

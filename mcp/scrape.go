@@ -73,7 +73,8 @@ func (s *Server) registerScrapeTool() {
 }
 
 // validateScrapeInput enforces the url/urls union and the CLI's flag
-// compatibility rules, plus the force-browser precondition.
+// compatibility rules. Browser availability is checked after response
+// classification so forced PDF scrapes do not require a browser.
 func (s *Server) validateScrapeInput(in ScrapeInput) error {
 	if (in.URL == "") == (len(in.URLs) == 0) {
 		return errf(kindValidation, "provide exactly one of url or urls")
@@ -83,10 +84,6 @@ func (s *Server) validateScrapeInput(in ScrapeInput) error {
 	}
 	if in.Raw && in.Trim {
 		return errf(kindValidation, "raw cannot be combined with trim (trim is markdown-specific)")
-	}
-	// Hard opt-in like the CLI: never silently fall back to HTTP.
-	if in.ForceBrowser && !s.scraper.HasBrowser() {
-		return errf(kindPrecondition, "force_browser requires a configured browser (set with: ketch config set browser chrome)")
 	}
 	return nil
 }
@@ -110,7 +107,10 @@ func (s *Server) scrapeOne(ctx context.Context, rawURL string, in ScrapeInput) (
 	if in.Raw {
 		page, rawHTML, source, err := s.scraper.ScrapeRaw(ctx, pc, rawURL, in.ForceBrowser)
 		if err != nil {
-			return ScrapeResult{}, upstreamErrf(err, "scrape failed")
+			if errors.Is(err, scrape.ErrPDFRawUnsupported) {
+				return ScrapeResult{}, errf(kindValidation, "%w", err)
+			}
+			return ScrapeResult{}, classifyScrapeFailure(err)
 		}
 		return ScrapeResult{Page: *page, Source: source, RawHTML: extract.Truncate(rawHTML, in.MaxChars)}, nil
 	}
@@ -126,7 +126,7 @@ func (s *Server) scrapeOne(ctx context.Context, rawURL string, in ScrapeInput) (
 
 	page, err := s.scraper.ScrapeMarkdown(ctx, pc, rawURL, in.ForceBrowser)
 	if err != nil {
-		return ScrapeResult{}, upstreamErrf(err, "scrape failed")
+		return ScrapeResult{}, classifyScrapeFailure(err)
 	}
 	page.Markdown = extract.PostProcess(page.Markdown, in.Trim, in.MaxChars)
 	return ScrapeResult{Page: *page}, nil
@@ -166,16 +166,27 @@ func (s *Server) scrapeBatch(ctx context.Context, in ScrapeInput) []ScrapeResult
 	return results
 }
 
+func classifyScrapeFailure(err error) error {
+	switch {
+	case errors.Is(err, extract.ErrPDFNoText):
+		return errf(kindPrecondition, "scrape failed: %w; hint: configure external_pdf_to_md_converter_command with an OCR-capable converter", err)
+	case errors.Is(err, scrape.ErrNoBrowser):
+		return errf(kindPrecondition, "force_browser requires a configured browser (set with: ketch config set browser chrome): %w", err)
+	default:
+		return upstreamErrf(err, "scrape failed")
+	}
+}
+
 // classifySelectorErr maps the scrape package's selector sentinels to error
 // kinds: bad selector → validation, no match → not_found, anything else
 // (fetch/browser failure) → upstream/cancelled.
 func classifySelectorErr(err error) error {
 	switch {
-	case errors.Is(err, scrape.ErrBadSelector):
+	case errors.Is(err, scrape.ErrBadSelector), errors.Is(err, scrape.ErrPDFSelectorUnsupported):
 		return errf(kindValidation, "%w", err)
 	case errors.Is(err, scrape.ErrSelectorNoMatch):
 		return errf(kindNotFound, "%w", err)
 	default:
-		return upstreamErrf(err, "scrape failed")
+		return classifyScrapeFailure(err)
 	}
 }

@@ -6,10 +6,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -363,6 +366,78 @@ func TestCrawlSchedulerEndToEnd(t *testing.T) {
 		if n != 1 {
 			t.Errorf("URL %s visited %d times, want 1", u, n)
 		}
+	}
+}
+
+type crawlCountingBrowser struct {
+	calls atomic.Int32
+}
+
+func (b *crawlCountingBrowser) Fetch(context.Context, string) (string, error) {
+	b.calls.Add(1)
+	return `<html><body>Chromium PDF viewer</body></html>`, nil
+}
+
+func (b *crawlCountingBrowser) Close() {}
+
+func TestCrawlHostHeuristicDoesNotRenderPDF(t *testing.T) {
+	pdf, err := os.ReadFile("../extract/testdata/simple.pdf")
+	if err != nil {
+		t.Fatalf("read PDF fixture: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/pdf")
+		_, _ = w.Write(pdf)
+	}))
+	t.Cleanup(server.Close)
+	parsed, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse server URL: %v", err)
+	}
+
+	browser := &crawlCountingBrowser{}
+	s := scrape.NewWithBrowserConn(browser, nil)
+	var got Result
+	c := &crawler{
+		ctx:       t.Context(),
+		scraper:   s,
+		opts:      Options{Depth: 1},
+		fn:        func(result Result) { got = result },
+		hostStats: map[string]*hostJSStats{parsed.Hostname(): {total: 10, shells: 10}},
+	}
+	c.processItem(queueItem{url: server.URL + "/document.pdf", source: "link"})
+
+	if got.Error != "" {
+		t.Fatalf("crawl result error = %q", got.Error)
+	}
+	if got.Page == nil || !strings.Contains(got.Page.Markdown, "Ketch PDF extraction works.") {
+		t.Fatalf("crawl page = %#v", got.Page)
+	}
+	if browser.calls.Load() != 0 {
+		t.Fatalf("browser calls = %d, want 0", browser.calls.Load())
+	}
+}
+
+func TestCrawlDoesNotFollowLinksFromNonHTML(t *testing.T) {
+	t.Parallel()
+
+	var trapHits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/trap" {
+			trapHits.Add(1)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"embedded_html":"<a href='/trap'>must not be crawled</a>"}`))
+	}))
+	defer server.Close()
+
+	s := scrape.New()
+	defer s.Close()
+	if err := Crawl(t.Context(), server.URL, s, Options{Depth: 2, Concurrency: 2}, nil, false, func(Result) {}); err != nil {
+		t.Fatalf("Crawl: %v", err)
+	}
+	if trapHits.Load() != 0 {
+		t.Fatalf("followed a link from non-HTML content %d times", trapHits.Load())
 	}
 }
 

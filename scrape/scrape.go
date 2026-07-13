@@ -1,11 +1,13 @@
 package scrape
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"strings"
@@ -47,10 +49,17 @@ type Page struct {
 	ContentHash  string `json:"content_hash,omitempty"`
 }
 
+// FetchedContent preserves the response body bytes and declared content type.
+type FetchedContent struct {
+	Body        []byte
+	ContentType string
+}
+
 // FetchResult holds the output of a conditional scrape.
 type FetchResult struct {
 	Page        *Page
 	RawHTML     string
+	ContentType string
 	NotModified bool
 	JSDetection string // "static", "likely_shell", "ambiguous"
 
@@ -67,13 +76,14 @@ type FetchResult struct {
 
 // Scraper fetches web pages and extracts content as markdown.
 type Scraper struct {
-	client     *http.Client
-	extractor  *extract.Extractor
-	detector   *extract.Detector
-	browserBin string
-	browserMu  sync.Mutex
-	browser    BrowserConn
-	rewriter   *urlrewrite.Rewriter
+	client       *http.Client
+	extractor    *extract.Extractor
+	pdfExtractor extract.PDFExtractor
+	detector     *extract.Detector
+	browserBin   string
+	browserMu    sync.Mutex
+	browser      BrowserConn
+	rewriter     *urlrewrite.Rewriter
 }
 
 // NewWithRewriter creates a Scraper with an optional browser binary and
@@ -82,11 +92,12 @@ type Scraper struct {
 // built-in SPA markers; use NewWithConfig to add operator-configured markers.
 func NewWithRewriter(browserBin string, rw *urlrewrite.Rewriter) *Scraper {
 	return &Scraper{
-		client:     httpx.Default(),
-		extractor:  extract.New(),
-		detector:   extract.NewDetector(nil),
-		browserBin: browserBin,
-		rewriter:   rw,
+		client:       httpx.Default(),
+		extractor:    extract.New(),
+		pdfExtractor: extract.NewPDFExtractor(),
+		detector:     extract.NewDetector(nil),
+		browserBin:   browserBin,
+		rewriter:     rw,
 	}
 }
 
@@ -173,80 +184,99 @@ func (s *Scraper) getBrowser() BrowserConn {
 func (s *Scraper) Scrape(ctx context.Context, rawURL string) (*Page, string, error) {
 	fetchURL := s.Rewrite(rawURL)
 
-	body, err := s.Fetch(ctx, fetchURL)
+	content, err := s.FetchContent(ctx, fetchURL)
 	if err != nil {
 		return nil, "", err
 	}
 
-	body, source := s.MaybeBrowserFetch(ctx, fetchURL, body)
+	contentType := effectiveContentType(content.ContentType, content.Body)
+	if contentType == "application/pdf" {
+		markdown, err := s.pdfExtractor.Extract(ctx, content.Body)
+		if err != nil {
+			return nil, "", fmt.Errorf("PDF extraction failed for %s: %w", fetchURL, err)
+		}
+		page := &Page{URL: rawURL, Markdown: markdown}
+		if fetchURL != rawURL {
+			page.FetchedURL = fetchURL
+		}
+		return page, SourceHTTP, nil
+	}
 
-	result, err := s.extractor.Extract(fetchURL, body)
+	html, source := s.MaybeBrowserFetch(ctx, fetchURL, string(content.Body))
+	result, err := s.extractor.Extract(fetchURL, html)
 	if err != nil {
 		return nil, "", fmt.Errorf("extraction failed for %s: %w", fetchURL, err)
 	}
 
-	p := &Page{
+	page := &Page{
 		URL:      rawURL,
 		Title:    result.Title,
 		Markdown: result.Markdown,
 	}
 	if fetchURL != rawURL {
-		p.FetchedURL = fetchURL
+		page.FetchedURL = fetchURL
 	}
-	return p, source, nil
+	return page, source, nil
 }
 
 // ScrapeConditional fetches a URL with conditional headers and JS detection.
 func (s *Scraper) ScrapeConditional(ctx context.Context, rawURL, etag, lastModified string) (*FetchResult, error) {
-	fetchURL := s.Rewrite(rawURL)
+	return s.scrapeConditional(ctx, rawURL, etag, lastModified, nil)
+}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", fetchURL, nil)
+func (s *Scraper) scrapeConditional(ctx context.Context, rawURL, etag, lastModified string, pdfUnsupported error) (*FetchResult, error) {
+	fetchURL := s.Rewrite(rawURL)
+	content, headers, notModified, err := s.fetchContent(ctx, fetchURL, etag, lastModified)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ketch/1.0)")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml")
-	if etag != "" {
-		req.Header.Set("If-None-Match", etag)
-	}
-	if lastModified != "" {
-		req.Header.Set("If-Modified-Since", lastModified)
-	}
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotModified {
+	if notModified {
 		return &FetchResult{NotModified: true}, nil
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d for %s", resp.StatusCode, fetchURL)
+
+	contentType := effectiveContentType(content.ContentType, content.Body)
+	if contentType == "application/pdf" {
+		if pdfUnsupported != nil {
+			return nil, pdfUnsupported
+		}
+		markdown, err := s.pdfExtractor.Extract(ctx, content.Body)
+		if err != nil {
+			return nil, fmt.Errorf("PDF extraction failed for %s: %w", fetchURL, err)
+		}
+		page := &Page{
+			URL:          rawURL,
+			Markdown:     markdown,
+			ETag:         headers.Get("ETag"),
+			LastModified: headers.Get("Last-Modified"),
+			ContentHash:  ContentHash(markdown),
+		}
+		if fetchURL != rawURL {
+			page.FetchedURL = fetchURL
+		}
+		return &FetchResult{Page: page, ContentType: contentType, Source: SourceHTTP}, nil
 	}
 
-	b, err := io.ReadAll(io.LimitReader(resp.Body, MaxBodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("read body failed: %w", err)
-	}
-
-	html := string(b)
-
-	// Parse once for JS-shell detection; downstream callers can reuse this
-	// doc via FetchResult.Doc instead of paying to re-parse the same HTML.
-	doc, parseErr := goquery.NewDocumentFromReader(strings.NewReader(html))
+	html := string(content.Body)
+	var doc *goquery.Document
 	var detection string
-	if parseErr != nil {
-		detection = "ambiguous"
-	} else {
-		detection = s.detector.DetectJSShellFromDoc(doc, html)
-	}
-
 	source := SourceHTTP
-	if detection == "likely_shell" {
-		html, source = s.browserFetchOrWarn(ctx, fetchURL, html)
-		doc = nil // rendered HTML needs a fresh parse downstream
+	if isHTMLContentType(contentType) {
+		// Parse once for JS-shell detection; downstream callers can reuse this
+		// doc via FetchResult.Doc instead of re-parsing the same HTML.
+		var parseErr error
+		doc, parseErr = goquery.NewDocumentFromReader(strings.NewReader(html))
+		if parseErr != nil {
+			detection = "ambiguous"
+		} else {
+			detection = s.detector.DetectJSShellFromDoc(doc, html)
+		}
+		if detection == "likely_shell" {
+			html, source = s.browserFetchOrWarn(ctx, fetchURL, html)
+			doc = nil // rendered HTML needs a fresh parse downstream
+			if source == SourceBrowser {
+				contentType = "text/html"
+			}
+		}
 	}
 
 	result, err := s.extractor.Extract(fetchURL, html)
@@ -258,8 +288,8 @@ func (s *Scraper) ScrapeConditional(ctx context.Context, rawURL, etag, lastModif
 		URL:          rawURL,
 		Title:        result.Title,
 		Markdown:     result.Markdown,
-		ETag:         resp.Header.Get("ETag"),
-		LastModified: resp.Header.Get("Last-Modified"),
+		ETag:         headers.Get("ETag"),
+		LastModified: headers.Get("Last-Modified"),
 		ContentHash:  ContentHash(result.Markdown),
 	}
 	if fetchURL != rawURL {
@@ -270,6 +300,7 @@ func (s *Scraper) ScrapeConditional(ctx context.Context, rawURL, etag, lastModif
 		Doc:         doc,
 		Page:        page,
 		RawHTML:     html,
+		ContentType: contentType,
 		JSDetection: detection,
 		Source:      source,
 	}, nil
@@ -353,29 +384,90 @@ func ContentHash(s string) string {
 	return hex.EncodeToString(h[:])[:16]
 }
 
-// Fetch fetches the raw HTML for a URL without extraction or browser fallback.
+// FetchContent fetches a URL without extraction or browser fallback while
+// preserving response bytes and the server-declared content type.
+func (s *Scraper) FetchContent(ctx context.Context, rawURL string) (*FetchedContent, error) {
+	content, _, notModified, err := s.fetchContent(ctx, rawURL, "", "")
+	if err != nil {
+		return nil, err
+	}
+	if notModified {
+		return nil, fmt.Errorf("unexpected 304 Not Modified for unconditional fetch of %s", rawURL)
+	}
+	return content, nil
+}
+
+// Fetch is the compatibility wrapper for callers that expect a string body.
 func (s *Scraper) Fetch(ctx context.Context, rawURL string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
+	content, err := s.FetchContent(ctx, rawURL)
 	if err != nil {
 		return "", err
 	}
+	return string(content.Body), nil
+}
+
+func (s *Scraper) fetchContent(ctx context.Context, rawURL, etag, lastModified string) (*FetchedContent, http.Header, bool, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
+	if err != nil {
+		return nil, nil, false, err
+	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ketch/1.0)")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/pdf")
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
+	}
+	if lastModified != "" {
+		req.Header.Set("If-Modified-Since", lastModified)
+	}
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("fetch failed: %w", err)
+		return nil, nil, false, fmt.Errorf("fetch failed: %w", err)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotModified {
+		return nil, resp.Header, true, nil
+	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("HTTP %d for %s", resp.StatusCode, rawURL)
+		return nil, nil, false, fmt.Errorf("HTTP %d for %s", resp.StatusCode, rawURL)
 	}
 
-	b, err := io.ReadAll(io.LimitReader(resp.Body, MaxBodyBytes))
+	body, err := readBoundedBody(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("read body failed: %w", err)
+		return nil, nil, false, err
 	}
+	return &FetchedContent{Body: body, ContentType: resp.Header.Get("Content-Type")}, resp.Header, false, nil
+}
 
-	return string(b), nil
+// readBoundedBody preserves the historical scrape behavior: responses larger
+// than MaxBodyBytes are silently truncated instead of failing the scrape.
+func readBoundedBody(reader io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(reader, MaxBodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("read body failed: %w", err)
+	}
+	return body, nil
+}
+
+func effectiveContentType(declared string, body []byte) string {
+	mediaType, _, err := mime.ParseMediaType(declared)
+	if err != nil {
+		mediaType = ""
+	}
+	mediaType = strings.ToLower(mediaType)
+	if mediaType == "application/pdf" || bytes.HasPrefix(body, []byte("%PDF-")) {
+		return "application/pdf"
+	}
+	if mediaType == "" || mediaType == "application/octet-stream" || mediaType == "binary/octet-stream" {
+		detected, _, detectErr := mime.ParseMediaType(http.DetectContentType(body))
+		if detectErr == nil {
+			return strings.ToLower(detected)
+		}
+	}
+	return mediaType
+}
+
+func isHTMLContentType(contentType string) bool {
+	return contentType == "text/html" || contentType == "application/xhtml+xml"
 }
