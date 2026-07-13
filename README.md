@@ -15,7 +15,7 @@ Most research tooling for agents means wiring up several provider SDKs, each wit
 - `ketch code` — grep real OSS source across public repos (Grep, Sourcegraph, or GitHub Code Search)
 - `ketch docs` — curated, version-aware library documentation (Context7)
 
-Plus `ketch scrape` and `ketch crawl` to turn any URL or site into clean markdown.
+Plus `ketch scrape` and `ketch crawl` to turn HTML pages and text-based PDFs into clean markdown.
 
 It's built for two audiences at once:
 
@@ -99,6 +99,23 @@ curl -L https://chain.sh/ketch | ketch extract
 cat page.html | ketch extract --select article --max-chars 4000
 ```
 
+### PDF extraction
+
+`ketch scrape` detects PDFs from the response MIME type or `%PDF-` signature and extracts their text with a built-in pure-Go parser:
+
+```sh
+ketch scrape https://example.com/report.pdf
+```
+
+Scanned/image-only PDFs need OCR and return a precondition error with an OCR-converter hint in the built-in path. Operators can configure an external PDF-to-Markdown converter that writes Markdown to stdout (capped at 10 MiB); its shlex-parsed command must contain exactly one `{input}` placeholder:
+
+```sh
+ketch config set external_pdf_to_md_converter_command 'pdftotext "{input}" -'
+ketch config set external_pdf_to_md_converter_timeout_sec 300
+```
+
+When configured, the external converter is authoritative: failures are returned rather than silently falling back to the built-in parser. PDF binary output is never emitted: `--raw` and `--select` reject PDFs as validation errors. With `--force-browser`, PDF markdown still uses text extraction and never opens Chromium's PDF viewer.
+
 ## Commands
 
 | Command | What it does |
@@ -106,7 +123,7 @@ cat page.html | ketch extract --select article --max-chars 4000
 | `search` | Web search — Brave, DuckDuckGo, SearXNG, Exa, Firecrawl, or Keenable |
 | `code` | Grep real OSS source — Grep (default), Sourcegraph, or GitHub Code Search |
 | `docs` | Library/framework docs — Context7 (curated, version-aware snippets) |
-| `scrape` | Fetch URL(s) and extract clean markdown; concurrent batch, JSON array, file, or stdin input |
+| `scrape` | Fetch HTML or PDF URL(s) and extract clean markdown; concurrent batch, JSON array, file, or stdin input |
 | `extract` | Convert piped HTML to clean markdown (`curl ... \| ketch extract`) — no fetch, no cache, no browser |
 | `crawl` | BFS or sitemap crawl with optional background execution and status tracking |
 | `browser` | Manage headless Chrome for JS-rendered pages (`install`, `status`) |
@@ -148,7 +165,7 @@ ketch config                               # print effective config + available 
 ketch config path                          # print the config file path
 ```
 
-Other configurable keys include per-backend API keys and URLs (`brave_api_key`, `context7_api_key`, `github_token`, `sourcegraph_url`, `exa_api_key`, `firecrawl_api_key`), `cache_ttl`, `url_rewrites` (regex rewrite rules applied before fetch), and `spa_markers` (extra JS-shell detection tokens). See the [config reference](https://1broseidon.github.io/ketch/) for the full list.
+Other configurable keys include per-backend API keys and URLs (`brave_api_key`, `context7_api_key`, `github_token`, `sourcegraph_url`, `exa_api_key`, `firecrawl_api_key`), `cache_ttl`, `url_rewrites` (regex rewrite rules applied before fetch), `spa_markers` (extra JS-shell detection tokens), and the optional external PDF converter command/timeout. See the [config reference](https://1broseidon.github.io/ketch/) for the full list.
 
 ## Agent integration
 

@@ -76,12 +76,6 @@ func runScrape(cmd *cobra.Command, args []string) error {
 	}
 	defer scraper.Close()
 
-	// --force-browser is a hard opt-in: never silently fall back to HTTP, or it
-	// would reproduce the JS-shell confusion the flag exists to avoid.
-	if forceBrowser && !scraper.HasBrowser() {
-		return exitErrf(ExitPrecondition, "--force-browser requires a configured browser (set with: ketch config set browser chrome)")
-	}
-
 	pc := newPageCache(noCache)
 	defer pc.Close()
 
@@ -199,7 +193,10 @@ func scrapeSingle(ctx context.Context, s *scrape.Scraper, pc *cache.Cache, rawUR
 	if raw {
 		page, rawHTML, source, err := s.ScrapeRaw(ctx, pc, rawURL, forceBrowser)
 		if err != nil {
-			return exitErrf(ExitUpstream, "scrape failed: %w", err)
+			if errors.Is(err, scrape.ErrPDFRawUnsupported) {
+				return &ExitError{Code: ExitValidation, Err: err}
+			}
+			return classifyScrapeFailure(err)
 		}
 		return emitRaw(os.Stdout, page, rawHTML, source, asJSON, maxChars)
 	}
@@ -220,7 +217,7 @@ func scrapeSingle(ctx context.Context, s *scrape.Scraper, pc *cache.Cache, rawUR
 
 	page, err := s.ScrapeMarkdown(ctx, pc, rawURL, forceBrowser)
 	if err != nil {
-		return exitErrf(ExitUpstream, "scrape failed: %w", err)
+		return classifyScrapeFailure(err)
 	}
 
 	page.Markdown = extract.PostProcess(page.Markdown, trim, maxChars)
@@ -233,15 +230,15 @@ func scrapeSingle(ctx context.Context, s *scrape.Scraper, pc *cache.Cache, rawUR
 	return nil
 }
 
-func scrapeMultiple(ctx context.Context, s *scrape.Scraper, pc *cache.Cache, urls []string, asJSON, raw, trim bool, maxChars int, selector string, noLLMSTxt bool, concurrency int, forceBrowser bool) error {
-	type indexedResult struct {
-		idx     int
-		page    *scrape.Page
-		rawHTML string
-		source  string
-		err     error
-	}
+type indexedResult struct {
+	idx     int
+	page    *scrape.Page
+	rawHTML string
+	source  string
+	err     error
+}
 
+func scrapeMultiple(ctx context.Context, s *scrape.Scraper, pc *cache.Cache, urls []string, asJSON, raw, trim bool, maxChars int, selector string, noLLMSTxt bool, concurrency int, forceBrowser bool) error {
 	results := make([]indexedResult, len(urls))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, concurrency)
@@ -258,6 +255,10 @@ func scrapeMultiple(ctx context.Context, s *scrape.Scraper, pc *cache.Cache, url
 		}(i, u)
 	}
 	wg.Wait()
+
+	if err := scrapeBatchTerminalError(results); err != nil {
+		return err
+	}
 
 	if asJSON {
 		if raw {
@@ -304,6 +305,29 @@ func scrapeMultiple(ctx context.Context, s *scrape.Scraper, pc *cache.Cache, url
 	return nil
 }
 
+func scrapeBatchTerminalError(results []indexedResult) error {
+	for _, result := range results {
+		if errors.Is(result.err, scrape.ErrPDFRawUnsupported) || errors.Is(result.err, scrape.ErrPDFSelectorUnsupported) {
+			return &ExitError{Code: ExitValidation, Err: result.err}
+		}
+		if errors.Is(result.err, extract.ErrPDFNoText) || errors.Is(result.err, scrape.ErrNoBrowser) {
+			return classifyScrapeFailure(result.err)
+		}
+	}
+	return nil
+}
+
+func classifyScrapeFailure(err error) error {
+	switch {
+	case errors.Is(err, extract.ErrPDFNoText):
+		return exitErrf(ExitPrecondition, "scrape failed: %w; hint: configure external_pdf_to_md_converter_command with an OCR-capable converter", err)
+	case errors.Is(err, scrape.ErrNoBrowser):
+		return exitErrf(ExitPrecondition, "--force-browser requires a configured browser (set with: ketch config set browser chrome): %w", err)
+	default:
+		return exitErrf(ExitUpstream, "scrape failed: %w", err)
+	}
+}
+
 // scrapeOneURL handles a single URL within scrapeMultiple, applying selector,
 // raw, and llms.txt detection the same way scrapeSingle does.
 func scrapeOneURL(ctx context.Context, s *scrape.Scraper, pc *cache.Cache, rawURL string, raw bool, selector string, noLLMSTxt, forceBrowser bool) (*scrape.Page, string, string, error) {
@@ -331,12 +355,12 @@ func scrapeURLWithSelector(ctx context.Context, s *scrape.Scraper, rawURL, selec
 	page, err := s.ScrapeSelector(ctx, rawURL, selector, forceBrowser)
 	if err != nil {
 		switch {
-		case errors.Is(err, scrape.ErrBadSelector):
+		case errors.Is(err, scrape.ErrBadSelector), errors.Is(err, scrape.ErrPDFSelectorUnsupported):
 			return nil, &ExitError{Code: ExitValidation, Err: err}
 		case errors.Is(err, scrape.ErrSelectorNoMatch):
 			return nil, &ExitError{Code: ExitNotFound, Err: err}
 		default:
-			return nil, &ExitError{Code: ExitUpstream, Err: err}
+			return nil, classifyScrapeFailure(err)
 		}
 	}
 	return page, nil

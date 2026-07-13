@@ -215,21 +215,28 @@ func (c *crawler) processItem(item queueItem) {
 	var doc *goquery.Document
 	var err error
 	fetchSource := scrape.SourceHTTP
+	contentIsHTML := false
 
-	// If >80% of pages on this host are JS shells (after 10+ samples),
-	// skip detection and go straight to browser rendering.
-	if c.shouldForceBrowser(item.url) && c.scraper.HasBrowser() {
-		page, rawHTML, err = c.scraper.BrowserScrape(c.ctx, item.url)
-		fetchSource = scrape.SourceBrowser
-	} else {
-		var result *scrape.FetchResult
-		result, err = c.scraper.ScrapeConditional(c.ctx, item.url, "", "")
-		if err == nil {
-			page = result.Page
-			rawHTML = result.RawHTML
-			doc = result.Doc // may be nil when the page was re-fetched via browser
-			fetchSource = result.Source
+	// Even when the host heuristic says to render, classify the HTTP response
+	// first. PDFs and other non-HTML content must never enter the browser path.
+	forceBrowser := c.shouldForceBrowser(item.url) && c.scraper.HasBrowser()
+	var result *scrape.FetchResult
+	result, err = c.scraper.ScrapeConditional(c.ctx, item.url, "", "")
+	if err == nil {
+		page = result.Page
+		rawHTML = result.RawHTML
+		doc = result.Doc // may be nil when the page was re-fetched via browser
+		fetchSource = result.Source
+		contentIsHTML = result.ContentType == "text/html" || result.ContentType == "application/xhtml+xml"
+		if contentIsHTML {
 			c.recordJSDetection(item.url, result.JSDetection)
+		}
+		if forceBrowser && fetchSource != scrape.SourceBrowser && contentIsHTML {
+			page, rawHTML, err = c.scraper.BrowserScrape(c.ctx, item.url)
+			if err == nil {
+				doc = nil
+				fetchSource = scrape.SourceBrowser
+			}
 		}
 	}
 
@@ -252,7 +259,7 @@ func (c *crawler) processItem(item queueItem) {
 		URL:    item.url,
 	})
 
-	if item.depth < c.opts.Depth && rawHTML != "" {
+	if item.depth < c.opts.Depth && contentIsHTML && rawHTML != "" {
 		c.enqueueLinks(item, doc, rawHTML)
 	}
 }

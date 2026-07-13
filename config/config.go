@@ -14,22 +14,24 @@ import (
 
 // Config holds user-configurable defaults for ketch.
 type Config struct {
-	Backend         string            `json:"backend"`
-	SearxngURL      string            `json:"searxng_url"`
-	BraveAPIKey     string            `json:"brave_api_key,omitempty"`
-	ExaAPIKey       string            `json:"exa_api_key,omitempty"`
-	FirecrawlAPIKey string            `json:"firecrawl_api_key,omitempty"`
-	KeenableAPIKey  string            `json:"keenable_api_key,omitempty"`
-	Limit           int               `json:"limit"`
-	CacheTTL        string            `json:"cache_ttl"`
-	Browser         string            `json:"browser,omitempty"` // "chrome", "chromium", or absolute path; empty = disabled
-	CodeBackend     string            `json:"code_backend,omitempty"`
-	DocsBackend     string            `json:"docs_backend,omitempty"`
-	Context7APIKey  string            `json:"context7_api_key,omitempty"`
-	SourcegraphURL  string            `json:"sourcegraph_url,omitempty"`
-	GithubToken     string            `json:"github_token,omitempty"`
-	URLRewrites     []urlrewrite.Rule `json:"url_rewrites,omitempty"`
-	SPAMarkers      []string          `json:"spa_markers,omitempty"`
+	Backend                            string            `json:"backend"`
+	SearxngURL                         string            `json:"searxng_url"`
+	BraveAPIKey                        string            `json:"brave_api_key,omitempty"`
+	ExaAPIKey                          string            `json:"exa_api_key,omitempty"`
+	FirecrawlAPIKey                    string            `json:"firecrawl_api_key,omitempty"`
+	KeenableAPIKey                     string            `json:"keenable_api_key,omitempty"`
+	Limit                              int               `json:"limit"`
+	CacheTTL                           string            `json:"cache_ttl"`
+	Browser                            string            `json:"browser,omitempty"` // "chrome", "chromium", or absolute path; empty = disabled
+	CodeBackend                        string            `json:"code_backend,omitempty"`
+	DocsBackend                        string            `json:"docs_backend,omitempty"`
+	Context7APIKey                     string            `json:"context7_api_key,omitempty"`
+	SourcegraphURL                     string            `json:"sourcegraph_url,omitempty"`
+	GithubToken                        string            `json:"github_token,omitempty"`
+	URLRewrites                        []urlrewrite.Rule `json:"url_rewrites,omitempty"`
+	SPAMarkers                         []string          `json:"spa_markers,omitempty"`
+	ExternalPDFToMDConverterCommand    string            `json:"external_pdf_to_md_converter_command,omitempty"`
+	ExternalPDFToMDConverterTimeoutSec int               `json:"external_pdf_to_md_converter_timeout_sec"`
 }
 
 // ResolveGithubToken returns a token and the source it came from, walking the
@@ -61,13 +63,14 @@ func (c Config) ResolveGithubToken() (token, source string) {
 // Defaults returns the built-in default configuration.
 func Defaults() Config {
 	return Config{
-		Backend:        "brave",
-		SearxngURL:     "http://localhost:8081",
-		Limit:          5,
-		CacheTTL:       "72h",
-		CodeBackend:    "grepapp",
-		DocsBackend:    "context7",
-		SourcegraphURL: "https://sourcegraph.com",
+		Backend:                            "brave",
+		SearxngURL:                         "http://localhost:8081",
+		Limit:                              5,
+		CacheTTL:                           "72h",
+		CodeBackend:                        "grepapp",
+		DocsBackend:                        "context7",
+		SourcegraphURL:                     "https://sourcegraph.com",
+		ExternalPDFToMDConverterTimeoutSec: 300,
 	}
 }
 

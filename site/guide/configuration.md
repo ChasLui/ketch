@@ -31,6 +31,7 @@ The discovery payload:
   "sourcegraph_url": "https://sourcegraph.com",
   "github_token_source": "none",
   "github_token_set": false,
+  "external_pdf_to_md_converter_timeout_sec": 300,
   "available_backends": ["brave", "ddg", "searxng", "exa", "firecrawl", "keenable"],
   "available_code_backends": ["grepapp", "sourcegraph", "github"],
   "available_doc_backends": ["context7"]
@@ -41,7 +42,7 @@ The discovery payload:
 only — key values are never printed. `github_token_source` reports where the
 GitHub token was resolved from (`config`, `env`, `gh-cli`, or `none`), and
 `github_token_set` is true whenever that chain resolved a token.
-`url_rewrites` and `spa_markers` appear only when configured.
+`url_rewrites`, `spa_markers`, and `external_pdf_to_md_converter_command` appear only when configured. The external PDF converter timeout is always reported.
 
 ## Setting Values
 
@@ -55,6 +56,8 @@ ketch config set keenable_api_key keen_...
 ketch config set limit 10
 ketch config set cache_ttl 4h
 ketch config set browser chrome
+ketch config set external_pdf_to_md_converter_command 'pdftotext "{input}" -'
+ketch config set external_pdf_to_md_converter_timeout_sec 300
 ketch config set code_backend sourcegraph
 ketch config set docs_backend context7
 ketch config set context7_api_key ctx7...
@@ -93,6 +96,12 @@ ketch config set github_token ghp_...
 | `browser` | — | Browser for JS-rendered pages: `chrome`, `chromium`, or absolute path |
 | `url_rewrites` | — | Ordered regex rewrite rules applied before every fetch (see below) |
 | `spa_markers` | — | Extra JS-shell detection substrings (JSON array); pages containing one are treated as JS-rendered and re-fetched via the browser |
+| `external_pdf_to_md_converter_command` | — | Optional shlex-parsed PDF-to-Markdown command; must contain exactly one `{input}` placeholder and write Markdown to stdout (capped at 10 MiB) |
+| `external_pdf_to_md_converter_timeout_sec` | `300` | Positive timeout in seconds for the external PDF converter |
+
+When no external converter is configured, ketch uses its built-in pure-Go PDF text extractor. A PDF without a text layer returns a precondition error (exit 5 / `[precondition]`) with a hint to configure an OCR-capable converter. `ketch config set` validates the converter command before saving it. Once configured, the converter is authoritative: command failures, timeouts, empty output, and output over 10 MiB are returned without falling back to the built-in extractor. The command is executed directly, not through a shell, and the temporary `.pdf` input is removed after conversion.
+
+PDFs do not support `--raw` or `--select`; these return validation errors (exit 2 / `[validation]`). With `--force-browser`, normal markdown output still uses PDF text extraction and never opens Chromium's PDF viewer.
 
 Secrets (`brave_api_key`, `exa_api_key`, `firecrawl_api_key`, `keenable_api_key`, `context7_api_key`, `github_token`) are stored in
 plaintext in `config.json`; protect the file accordingly.

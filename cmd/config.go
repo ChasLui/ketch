@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/1broseidon/ketch/config"
+	"github.com/1broseidon/ketch/extract"
 	"github.com/1broseidon/ketch/urlrewrite"
 	"github.com/spf13/cobra"
 )
@@ -19,27 +20,29 @@ import (
 // (config → $GITHUB_TOKEN/$GH_TOKEN → gh CLI): it is true iff the source is
 // not "none".
 type configInfo struct {
-	ConfigPath            string            `json:"config_path"`
-	Backend               string            `json:"backend"`
-	SearxngURL            string            `json:"searxng_url"`
-	BraveAPIKeySet        bool              `json:"brave_api_key_set"`
-	ExaAPIKeySet          bool              `json:"exa_api_key_set"`
-	FirecrawlAPIKeySet    bool              `json:"firecrawl_api_key_set"`
-	KeenableAPIKeySet     bool              `json:"keenable_api_key_set"`
-	Limit                 int               `json:"limit"`
-	CacheTTL              string            `json:"cache_ttl"`
-	Browser               string            `json:"browser,omitempty"`
-	CodeBackend           string            `json:"code_backend"`
-	DocsBackend           string            `json:"docs_backend"`
-	Context7APIKeySet     bool              `json:"context7_api_key_set"`
-	SourcegraphURL        string            `json:"sourcegraph_url"`
-	GithubTokenSource     string            `json:"github_token_source"`
-	GithubTokenSet        bool              `json:"github_token_set"`
-	URLRewrites           []urlrewrite.Rule `json:"url_rewrites,omitempty"`
-	SPAMarkers            []string          `json:"spa_markers,omitempty"`
-	AvailableBackends     []string          `json:"available_backends"`
-	AvailableCodeBackends []string          `json:"available_code_backends"`
-	AvailableDocBackends  []string          `json:"available_doc_backends"`
+	ConfigPath                         string            `json:"config_path"`
+	Backend                            string            `json:"backend"`
+	SearxngURL                         string            `json:"searxng_url"`
+	BraveAPIKeySet                     bool              `json:"brave_api_key_set"`
+	ExaAPIKeySet                       bool              `json:"exa_api_key_set"`
+	FirecrawlAPIKeySet                 bool              `json:"firecrawl_api_key_set"`
+	KeenableAPIKeySet                  bool              `json:"keenable_api_key_set"`
+	Limit                              int               `json:"limit"`
+	CacheTTL                           string            `json:"cache_ttl"`
+	Browser                            string            `json:"browser,omitempty"`
+	CodeBackend                        string            `json:"code_backend"`
+	DocsBackend                        string            `json:"docs_backend"`
+	Context7APIKeySet                  bool              `json:"context7_api_key_set"`
+	SourcegraphURL                     string            `json:"sourcegraph_url"`
+	GithubTokenSource                  string            `json:"github_token_source"`
+	GithubTokenSet                     bool              `json:"github_token_set"`
+	URLRewrites                        []urlrewrite.Rule `json:"url_rewrites,omitempty"`
+	SPAMarkers                         []string          `json:"spa_markers,omitempty"`
+	ExternalPDFToMDConverterCommand    string            `json:"external_pdf_to_md_converter_command,omitempty"`
+	ExternalPDFToMDConverterTimeoutSec int               `json:"external_pdf_to_md_converter_timeout_sec"`
+	AvailableBackends                  []string          `json:"available_backends"`
+	AvailableCodeBackends              []string          `json:"available_code_backends"`
+	AvailableDocBackends               []string          `json:"available_doc_backends"`
 }
 
 var configCmd = &cobra.Command{
@@ -81,27 +84,29 @@ func runConfigShow(_ *cobra.Command, _ []string) error {
 	_, ghSource := c.ResolveGithubToken()
 
 	info := configInfo{
-		ConfigPath:            path,
-		Backend:               c.Backend,
-		SearxngURL:            c.SearxngURL,
-		BraveAPIKeySet:        c.BraveAPIKey != "",
-		ExaAPIKeySet:          c.ExaAPIKey != "",
-		FirecrawlAPIKeySet:    c.FirecrawlAPIKey != "",
-		KeenableAPIKeySet:     c.KeenableAPIKey != "",
-		Limit:                 c.Limit,
-		CacheTTL:              c.CacheTTL,
-		Browser:               c.Browser,
-		CodeBackend:           c.CodeBackend,
-		DocsBackend:           c.DocsBackend,
-		Context7APIKeySet:     c.Context7APIKey != "",
-		SourcegraphURL:        c.SourcegraphURL,
-		GithubTokenSource:     ghSource,
-		GithubTokenSet:        ghSource != "none",
-		URLRewrites:           c.URLRewrites,
-		SPAMarkers:            c.SPAMarkers,
-		AvailableBackends:     config.AvailableBackends(),
-		AvailableCodeBackends: config.AvailableCodeBackends(),
-		AvailableDocBackends:  config.AvailableDocBackends(),
+		ConfigPath:                         path,
+		Backend:                            c.Backend,
+		SearxngURL:                         c.SearxngURL,
+		BraveAPIKeySet:                     c.BraveAPIKey != "",
+		ExaAPIKeySet:                       c.ExaAPIKey != "",
+		FirecrawlAPIKeySet:                 c.FirecrawlAPIKey != "",
+		KeenableAPIKeySet:                  c.KeenableAPIKey != "",
+		Limit:                              c.Limit,
+		CacheTTL:                           c.CacheTTL,
+		Browser:                            c.Browser,
+		CodeBackend:                        c.CodeBackend,
+		DocsBackend:                        c.DocsBackend,
+		Context7APIKeySet:                  c.Context7APIKey != "",
+		SourcegraphURL:                     c.SourcegraphURL,
+		GithubTokenSource:                  ghSource,
+		GithubTokenSet:                     ghSource != "none",
+		URLRewrites:                        c.URLRewrites,
+		SPAMarkers:                         c.SPAMarkers,
+		ExternalPDFToMDConverterCommand:    c.ExternalPDFToMDConverterCommand,
+		ExternalPDFToMDConverterTimeoutSec: c.ExternalPDFToMDConverterTimeoutSec,
+		AvailableBackends:                  config.AvailableBackends(),
+		AvailableCodeBackends:              config.AvailableCodeBackends(),
+		AvailableDocBackends:               config.AvailableDocBackends(),
 	}
 
 	enc := json.NewEncoder(os.Stdout)
@@ -181,8 +186,12 @@ func applyConfigSet(c *config.Config, key, value string) error {
 		return setURLRewrites(c, value)
 	case "spa_markers":
 		return setSPAMarkers(c, value)
+	case "external_pdf_to_md_converter_command":
+		return setExternalPDFConverterCommand(c, value)
+	case "external_pdf_to_md_converter_timeout_sec":
+		return setExternalPDFConverterTimeout(c, value)
 	default:
-		return exitErrf(ExitValidation, "unknown key: %s (valid: backend, searxng_url, brave_api_key, exa_api_key, firecrawl_api_key, keenable_api_key, limit, cache_ttl, browser, code_backend, docs_backend, context7_api_key, sourcegraph_url, github_token, url_rewrites, spa_markers)", key)
+		return exitErrf(ExitValidation, "unknown key: %s (valid: backend, searxng_url, brave_api_key, exa_api_key, firecrawl_api_key, keenable_api_key, limit, cache_ttl, browser, code_backend, docs_backend, context7_api_key, sourcegraph_url, github_token, url_rewrites, spa_markers, external_pdf_to_md_converter_command, external_pdf_to_md_converter_timeout_sec)", key)
 	}
 	return nil
 }
@@ -201,6 +210,27 @@ func setCacheTTL(c *config.Config, value string) error {
 		return exitErrf(ExitValidation, "cache_ttl must be a duration (e.g. 1h, 30m): %w", err)
 	}
 	c.CacheTTL = value
+	return nil
+}
+
+func setExternalPDFConverterCommand(c *config.Config, value string) error {
+	if value == "" {
+		c.ExternalPDFToMDConverterCommand = ""
+		return nil
+	}
+	if _, err := extract.NewExternalPDFExtractor(value, time.Second); err != nil {
+		return exitErrf(ExitValidation, "invalid external_pdf_to_md_converter_command: %w", err)
+	}
+	c.ExternalPDFToMDConverterCommand = value
+	return nil
+}
+
+func setExternalPDFConverterTimeout(c *config.Config, value string) error {
+	n, err := strconv.Atoi(value)
+	if err != nil || n <= 0 {
+		return exitErrf(ExitValidation, "external_pdf_to_md_converter_timeout_sec must be a positive integer")
+	}
+	c.ExternalPDFToMDConverterTimeoutSec = n
 	return nil
 }
 

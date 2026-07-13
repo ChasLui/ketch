@@ -8,6 +8,8 @@ require (
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/andybalholm/cascadia v1.3.3
 	github.com/go-rod/rod v0.116.2
+	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/spf13/cobra v1.10.2
 	go.etcd.io/bbolt v1.4.3

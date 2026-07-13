@@ -39,6 +39,10 @@ var (
 	ErrBadSelector = errors.New("selector extraction failed")
 	// ErrSelectorNoMatch reports that the selector matched no elements.
 	ErrSelectorNoMatch = errors.New("no elements matched selector")
+	// ErrPDFSelectorUnsupported reports that CSS selectors only apply to HTML.
+	ErrPDFSelectorUnsupported = errors.New("CSS selector extraction is not supported for PDF documents")
+	// ErrPDFRawUnsupported reports that returning PDF binary data is forbidden.
+	ErrPDFRawUnsupported = errors.New("raw output is not supported for PDF documents")
 )
 
 // NewFromConfig builds a Scraper from cfg: compiled URL rewriter, optional
@@ -51,7 +55,18 @@ func NewFromConfig(cfg *config.Config) (*Scraper, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid url_rewrites: %w", err)
 	}
-	return NewWithConfig(cfg.Browser, rw, cfg.SPAMarkers), nil
+	scraper := NewWithConfig(cfg.Browser, rw, cfg.SPAMarkers)
+	if cfg.ExternalPDFToMDConverterCommand != "" {
+		pdfExtractor, err := extract.NewExternalPDFExtractor(
+			cfg.ExternalPDFToMDConverterCommand,
+			time.Duration(cfg.ExternalPDFToMDConverterTimeoutSec)*time.Second,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("invalid external PDF converter: %w", err)
+		}
+		scraper.pdfExtractor = pdfExtractor
+	}
+	return scraper, nil
 }
 
 // CachedScrape checks the cache first, falls back to fetch+extract.
@@ -94,7 +109,7 @@ func (s *Scraper) CachedScrapeRaw(ctx context.Context, pc PageCache, url string)
 		}
 	}
 
-	result, err := s.ScrapeConditional(ctx, url, "", "")
+	result, err := s.scrapeConditional(ctx, url, "", "", ErrPDFRawUnsupported)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -108,13 +123,33 @@ func (s *Scraper) CachedScrapeRaw(ctx context.Context, pc PageCache, url string)
 	return result.Page, result.RawHTML, result.Source, nil
 }
 
-// CachedScrapeForce is the forced-browser markdown path. It always renders via
-// the browser, reusing a cache entry only when that entry is itself a browser
-// render (force-browser selects the rendering pipeline, not cache freshness —
-// bypass the cache for that). HTTP/shell/markdown-only entries never satisfy a
-// forced request, which is precisely the anti-poisoning guard.
+// CachedScrapeForce is the forced-browser markdown path. It classifies a
+// plain HTTP response before any browser render so PDFs bypass Chromium's PDF
+// viewer and use the configured PDF extractor. For HTML, a cache entry is
+// reused only when that entry is itself a browser render.
 func (s *Scraper) CachedScrapeForce(ctx context.Context, pc PageCache, url string) (*Page, error) {
 	key := s.Rewrite(url)
+	content, err := s.FetchContent(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if effectiveContentType(content.ContentType, content.Body) == "application/pdf" {
+		markdown, err := s.pdfExtractor.Extract(ctx, content.Body)
+		if err != nil {
+			return nil, fmt.Errorf("PDF extraction failed for %s: %w", key, err)
+		}
+		page := &Page{URL: url, Markdown: markdown}
+		if key != url {
+			page.FetchedURL = key
+		}
+		if pc != nil {
+			pc.Put(key, page, SourceHTTP)
+		}
+		return page, nil
+	}
+	if !s.HasBrowser() {
+		return nil, ErrNoBrowser
+	}
 	if pc != nil {
 		if page, source := pc.Get(key); page != nil && source == SourceBrowser {
 			return page, nil
@@ -130,13 +165,21 @@ func (s *Scraper) CachedScrapeForce(ctx context.Context, pc PageCache, url strin
 	return page, nil
 }
 
-// CachedScrapeRawForce is the forced-browser raw path: render unconditionally
-// and emit the rendered HTML. A cache hit is honored only for a prior browser
-// render (GetRaw already requires non-empty RawHTML). BrowserScrape runs
-// extractor.Extract internally; the resulting markdown Page is unused here,
-// but that work is dwarfed by render cost — don't split the API to avoid it.
+// CachedScrapeRawForce is the forced-browser raw path. It classifies the HTTP
+// response before consulting the browser cache or rendering, rejecting PDFs
+// rather than returning Chromium's PDF-viewer HTML.
 func (s *Scraper) CachedScrapeRawForce(ctx context.Context, pc PageCache, url string) (*Page, string, string, error) {
 	key := s.Rewrite(url)
+	content, err := s.FetchContent(ctx, key)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if effectiveContentType(content.ContentType, content.Body) == "application/pdf" {
+		return nil, "", "", ErrPDFRawUnsupported
+	}
+	if !s.HasBrowser() {
+		return nil, "", "", ErrNoBrowser
+	}
 	if pc != nil {
 		if rawHTML, source, page := pc.GetRaw(key); page != nil && source == SourceBrowser {
 			return page, rawHTML, source, nil
@@ -152,8 +195,8 @@ func (s *Scraper) CachedScrapeRawForce(ctx context.Context, pc PageCache, url st
 	return page, html, SourceBrowser, nil
 }
 
-// ScrapeMarkdown picks the markdown fetch path: forced browser render or the
-// auto-detecting CachedScrape.
+// ScrapeMarkdown picks the markdown fetch path. Forced-browser HTML renders;
+// forced-browser PDFs still use text extraction after content classification.
 func (s *Scraper) ScrapeMarkdown(ctx context.Context, pc PageCache, url string, forceBrowser bool) (*Page, error) {
 	if forceBrowser {
 		return s.CachedScrapeForce(ctx, pc, url)
@@ -161,8 +204,8 @@ func (s *Scraper) ScrapeMarkdown(ctx context.Context, pc PageCache, url string, 
 	return s.CachedScrape(ctx, pc, url)
 }
 
-// ScrapeRaw picks the raw-HTML fetch path: forced browser render or the
-// auto-detecting CachedScrapeRaw.
+// ScrapeRaw picks the raw-HTML fetch path, rejecting PDFs before any forced
+// browser render.
 func (s *Scraper) ScrapeRaw(ctx context.Context, pc PageCache, url string, forceBrowser bool) (*Page, string, string, error) {
 	if forceBrowser {
 		return s.CachedScrapeRawForce(ctx, pc, url)
@@ -172,9 +215,10 @@ func (s *Scraper) ScrapeRaw(ctx context.Context, pc PageCache, url string, force
 
 // ScrapeSelector fetches rawURL and returns only elements matching the CSS
 // selector, converted to markdown — bypassing readability extraction and the
-// page cache. Under forceBrowser it renders via the browser and selects
-// against the rendered DOM; otherwise it fetches plain HTTP with JS-shell
-// auto-detection. The URL is rewritten before fetch so selector scrapes share
+// page cache. Under forceBrowser it first classifies the response, rejects
+// PDFs, then renders HTML and selects against the rendered DOM; otherwise it
+// fetches plain HTTP with JS-shell auto-detection. The URL is rewritten before
+// fetch so selector scrapes share
 // the canonical URL-rewrite path with Scrape/ScrapeConditional.
 func (s *Scraper) ScrapeSelector(ctx context.Context, rawURL, selector string, forceBrowser bool) (*Page, error) {
 	fetchURL := s.Rewrite(rawURL)
@@ -196,12 +240,18 @@ func (s *Scraper) ScrapeSelector(ctx context.Context, rawURL, selector string, f
 	return page, nil
 }
 
-// fetchHTMLForSelector returns the HTML to run a CSS selector against. Under
-// forceBrowser it renders via the browser (then selects the rendered DOM);
-// otherwise it does the plain fetch with JS-shell auto-detection. rawURL is
-// passed to BrowserScrape, which rewrites internally; fetchURL is the
-// already-rewritten URL for the plain Fetch path.
+// fetchHTMLForSelector returns the HTML to run a CSS selector against. It
+// always classifies the plain HTTP response first so a forced browser render
+// cannot turn a PDF into Chromium viewer HTML. rawURL is passed to
+// BrowserScrape, which rewrites internally; fetchURL is already rewritten.
 func (s *Scraper) fetchHTMLForSelector(ctx context.Context, rawURL, fetchURL string, forceBrowser bool) (string, error) {
+	content, err := s.FetchContent(ctx, fetchURL)
+	if err != nil {
+		return "", fmt.Errorf("fetch failed: %w", err)
+	}
+	if effectiveContentType(content.ContentType, content.Body) == "application/pdf" {
+		return "", ErrPDFSelectorUnsupported
+	}
 	if forceBrowser {
 		_, html, err := s.BrowserScrape(ctx, rawURL)
 		if err != nil {
@@ -209,11 +259,7 @@ func (s *Scraper) fetchHTMLForSelector(ctx context.Context, rawURL, fetchURL str
 		}
 		return html, nil
 	}
-	html, err := s.Fetch(ctx, fetchURL)
-	if err != nil {
-		return "", fmt.Errorf("fetch failed: %w", err)
-	}
-	html, _ = s.MaybeBrowserFetch(ctx, fetchURL, html)
+	html, _ := s.MaybeBrowserFetch(ctx, fetchURL, string(content.Body))
 	return html, nil
 }
 

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- PDF text extraction for `scrape`, `search --scrape`, and `crawl` (#19). Text-based PDFs are detected by MIME type or `%PDF-` magic bytes and extracted by the always-available pure-Go `ledongthuc/pdf` implementation. Operators can instead configure `external_pdf_to_md_converter_command` (validated shlex syntax with exactly one `{input}` placeholder, Markdown on stdout capped at 10 MiB) and `external_pdf_to_md_converter_timeout_sec` (default 300 seconds); the external converter is authoritative and never silently falls back to the built-in parser. Response bodies retain the existing behavior of truncating at 20 MiB. `--raw` and `--select` reject PDFs as validation errors (exit 2 / `[validation]`); normal `--force-browser` PDF scrapes bypass Chromium and extract text directly. PDFs without a text layer are non-retryable precondition errors (exit 5 / `[precondition]`) with an OCR-converter hint. Crawl link discovery and browser rendering now run only for HTML responses.
+
 ## [0.11.0] - 2026-07-07
 
 ### Added
