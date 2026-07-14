@@ -14,16 +14,17 @@ import (
 
 // Brave searches via the Brave Search API.
 type Brave struct {
-	apiKey string
+	keys   keyPool
 	client *http.Client
 }
 
 // NewBrave creates a new Brave search backend.
 func NewBrave(apiKey string) *Brave {
-	return &Brave{
-		apiKey: apiKey,
-		client: httpx.Default(),
-	}
+	return newBraveWithKeys([]string{apiKey})
+}
+
+func newBraveWithKeys(keys []string) *Brave {
+	return &Brave{keys: newKeyPool(keys), client: httpx.Default()}
 }
 
 type braveResponse struct {
@@ -49,25 +50,26 @@ func (b *Brave) Search(ctx context.Context, query string, limit int) ([]Result, 
 
 	u := fmt.Sprintf("https://api.search.brave.com/res/v1/web/search?q=%s&count=%d&text_decorations=false&result_filter=web",
 		url.QueryEscape(query), count)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	key := b.keys.pick()
+	resp, err := b.request(ctx, u, key)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Subscription-Token", b.apiKey)
-
-	resp, err := b.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("brave request failed: %w", err)
+	if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusTooManyRequests) && b.keys.size() > 1 {
+		closeSearchResponse(resp)
+		key = b.keys.pickDifferent(key)
+		resp, err = b.request(ctx, u, key)
+		if err != nil {
+			return nil, err
+		}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("brave: invalid API key (set via: ketch config set brave_api_key <key>)")
+		return nil, fmt.Errorf("brave: invalid API key (%s; set via: ketch config set brave_api_key <key>)", b.keys.keyLabel(key))
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, fmt.Errorf("brave: rate limited")
+		return nil, fmt.Errorf("brave: rate limited (%s)", b.keys.keyLabel(key))
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, braveStatusError(resp)
@@ -91,6 +93,20 @@ func (b *Brave) Search(ctx context.Context, query string, limit int) ([]Result, 
 	}
 
 	return results, nil
+}
+
+func (b *Brave) request(ctx context.Context, endpoint, key string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Subscription-Token", key)
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("brave request failed: %w", err)
+	}
+	return resp, nil
 }
 
 func braveRequestCount(limit int) int {

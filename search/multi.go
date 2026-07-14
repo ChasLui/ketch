@@ -36,9 +36,9 @@ const (
 	scoreEpsilon = 1e-9
 )
 
-// BackendError records a single backend's failure during federated search.
-// Multi.Search collects these for partial-failure reporting; the whole search
-// only fails when every backend fails.
+// BackendError records a single backend's failure during multi or random
+// provider search. The caller can report partial/fallback failures without
+// hiding which providers were attempted.
 type BackendError struct {
 	Backend string
 	Err     error
@@ -70,38 +70,53 @@ type Multi struct {
 // ErrUnknownBackend; unconfigured → the constructor's precondition error), so
 // callers can classify with backendErr/backendErrf just like NewFromConfig.
 func NewMultiFromConfig(cfg *config.Config, names []string, searxngURL string) (*Multi, error) {
-	all := len(names) == 1 && names[0] == "all"
-
-	var candidates []string
-	if all {
-		candidates = config.AvailableBackends()
-	} else {
-		seen := make(map[string]bool, len(names))
-		for _, name := range names {
-			if name == "" || seen[name] {
-				continue
-			}
-			seen[name] = true
-			candidates = append(candidates, name)
-		}
+	backends, err := resolveCandidates(cfg, names, searxngURL)
+	if err != nil {
+		return nil, err
 	}
-
-	backends := make([]namedSearcher, 0, len(candidates))
-	for _, name := range candidates {
-		s, err := NewFromConfig(cfg, name, searxngURL)
-		if err != nil {
-			if all {
-				continue // skip backends that are not usable in the "all" set
-			}
-			return nil, err // explicit name: surface unknown/precondition
-		}
-		backends = append(backends, namedSearcher{name: name, searcher: s})
-	}
-
 	if len(backends) == 0 {
 		return nil, fmt.Errorf("no usable search backends for --multi")
 	}
 	return &Multi{backends: backends, timeout: multiBackendTimeout}, nil
+}
+
+// resolveCandidates constructs the usable providers shared by multi and
+// random search. The "all" sentinel skips providers whose preconditions are
+// not met; explicit names surface unknown/unconfigured errors.
+func resolveCandidates(cfg *config.Config, names []string, searxngURL string) ([]namedSearcher, error) {
+	all := len(names) == 1 && names[0] == "all"
+	var candidates []string
+	if all {
+		candidates = config.AvailableBackends()
+	} else {
+		candidates = uniqueBackendNames(names)
+	}
+
+	backends := make([]namedSearcher, 0, len(candidates))
+	for _, name := range candidates {
+		searcher, err := NewFromConfig(cfg, name, searxngURL)
+		if err != nil {
+			if all {
+				continue
+			}
+			return nil, err
+		}
+		backends = append(backends, namedSearcher{name: name, searcher: searcher})
+	}
+	return backends, nil
+}
+
+func uniqueBackendNames(names []string) []string {
+	seen := make(map[string]bool, len(names))
+	unique := make([]string, 0, len(names))
+	for _, name := range names {
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		unique = append(unique, name)
+	}
+	return unique
 }
 
 // Names returns the resolved backend names in fan-out order.

@@ -31,7 +31,7 @@ func TestFeatureBraveSearchParses(t *testing.T) {
 	}))
 	defer server.Close()
 
-	b := &Brave{apiKey: "test-key", client: server.Client()}
+	b := &Brave{keys: newKeyPool([]string{"test-key"}), client: server.Client()}
 	// Override URL by using the test server — need to patch the search method
 	// Instead, we'll create a custom transport
 	b.client = &http.Client{Transport: &rewriteTransport{base: server.Client().Transport, target: server.URL}}
@@ -84,7 +84,7 @@ func TestFeatureBraveRequestShape(t *testing.T) {
 	}))
 	defer server.Close()
 
-	b := &Brave{apiKey: "key", client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	b := &Brave{keys: newKeyPool([]string{"key"}), client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
 	_, err := b.Search(context.Background(), "test query", 5)
 	if err != nil {
 		t.Fatalf("Search error: %v", err)
@@ -98,7 +98,7 @@ func TestFeatureBraveSearch401(t *testing.T) {
 	}))
 	defer server.Close()
 
-	b := &Brave{apiKey: "bad-key", client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	b := &Brave{keys: newKeyPool([]string{"bad-key"}), client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
 	_, err := b.Search(context.Background(), "test", 5)
 	if err == nil {
 		t.Fatal("expected error for 401 response")
@@ -127,7 +127,7 @@ func TestFeatureBraveLimitRespected(t *testing.T) {
 	}))
 	defer server.Close()
 
-	b := &Brave{apiKey: "key", client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	b := &Brave{keys: newKeyPool([]string{"key"}), client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
 	results, err := b.Search(context.Background(), "test", 2)
 	if err != nil {
 		t.Fatalf("Search error: %v", err)
@@ -156,7 +156,7 @@ func TestFeatureBraveLimitCappedToAPIMax(t *testing.T) {
 	}))
 	defer server.Close()
 
-	b := &Brave{apiKey: "key", client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	b := &Brave{keys: newKeyPool([]string{"key"}), client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
 	results, err := b.Search(context.Background(), "test", 50)
 	if err != nil {
 		t.Fatalf("Search error: %v", err)
@@ -174,7 +174,7 @@ func TestFeatureBraveEmptyResults(t *testing.T) {
 	}))
 	defer server.Close()
 
-	b := &Brave{apiKey: "key", client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	b := &Brave{keys: newKeyPool([]string{"key"}), client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
 	results, err := b.Search(context.Background(), "nothing", 5)
 	if err != nil {
 		t.Fatalf("Search error: %v", err)
@@ -492,7 +492,7 @@ func TestFeatureEXAAPIKeyAdded(t *testing.T) {
 	defer server.Close()
 
 	key := "test-key"
-	e := &EXA{apiKey: &key, client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	e := &EXA{keys: newKeyPool([]string{key}), client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
 	_, err := e.Search(context.Background(), "rust", 5)
 	if err != nil {
 		t.Fatalf("Search error: %v", err)
@@ -514,7 +514,7 @@ func TestFeatureFirecrawlSearchParses(t *testing.T) {
 	}))
 	defer server.Close()
 
-	f := &Firecrawl{apiKey: "k", client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	f := &Firecrawl{keys: newKeyPool([]string{"k"}), client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
 	results, err := f.Search(context.Background(), "golang error handling", 5)
 	if err != nil {
 		t.Fatalf("Search returned error: %v", err)
@@ -557,7 +557,7 @@ func TestFeatureFirecrawlRequestShape(t *testing.T) {
 	}))
 	defer server.Close()
 
-	f := &Firecrawl{apiKey: "test-key", client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	f := &Firecrawl{keys: newKeyPool([]string{"test-key"}), client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
 	_, err := f.Search(context.Background(), "rust release date", 5)
 	if err != nil {
 		t.Fatalf("Search error: %v", err)
@@ -576,7 +576,7 @@ func TestFeatureFirecrawlLimitRespected(t *testing.T) {
 	}))
 	defer server.Close()
 
-	f := &Firecrawl{apiKey: "k", client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	f := &Firecrawl{keys: newKeyPool([]string{"k"}), client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
 	results, err := f.Search(context.Background(), "test", 2)
 	if err != nil {
 		t.Fatal(err)
@@ -594,7 +594,7 @@ func TestFeatureFirecrawlEmptyResults(t *testing.T) {
 	}))
 	defer server.Close()
 
-	f := &Firecrawl{apiKey: "k", client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	f := &Firecrawl{keys: newKeyPool([]string{"k"}), client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
 	results, err := f.Search(context.Background(), "nothing", 5)
 	if err != nil {
 		t.Fatal(err)
@@ -611,7 +611,7 @@ func TestFeatureFirecrawlInvalidKey(t *testing.T) {
 	}))
 	defer server.Close()
 
-	f := &Firecrawl{apiKey: "bad-key", client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	f := &Firecrawl{keys: newKeyPool([]string{"bad-key"}), client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
 	_, err := f.Search(context.Background(), "test", 5)
 	if err == nil {
 		t.Fatal("expected error for 401 response")
@@ -628,7 +628,7 @@ func TestFeatureFirecrawlServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	f := &Firecrawl{apiKey: "k", client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	f := &Firecrawl{keys: newKeyPool([]string{"k"}), client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
 	_, err := f.Search(context.Background(), "test", 5)
 	if err == nil {
 		t.Fatal("expected error for 500 response")
@@ -721,7 +721,7 @@ func TestFeatureKeenableKeyedRequestShape(t *testing.T) {
 	defer server.Close()
 
 	key := "keen_test"
-	k := &Keenable{apiKey: &key, client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	k := &Keenable{keys: newKeyPool([]string{key}), client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
 	_, err := k.Search(context.Background(), "test", 5)
 	if err != nil {
 		t.Fatalf("Search error: %v", err)
@@ -776,7 +776,7 @@ func TestFeatureKeenable401(t *testing.T) {
 	defer server.Close()
 
 	key := "bad-key"
-	k := &Keenable{apiKey: &key, client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
+	k := &Keenable{keys: newKeyPool([]string{key}), client: &http.Client{Transport: &rewriteTransport{base: http.DefaultTransport, target: server.URL}}}
 	_, err := k.Search(context.Background(), "test", 5)
 	if err == nil {
 		t.Fatal("expected error for 401 response")

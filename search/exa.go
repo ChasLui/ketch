@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,15 +16,19 @@ import (
 )
 
 type EXA struct {
-	apiKey *string
+	keys   keyPool
 	client *http.Client
 }
 
 func NewEXA(apiKey *string) *EXA {
-	return &EXA{
-		apiKey: apiKey,
-		client: httpx.Default(),
+	if apiKey == nil {
+		return newEXAWithKeys(nil)
 	}
+	return newEXAWithKeys([]string{*apiKey})
+}
+
+func newEXAWithKeys(keys []string) *EXA {
+	return &EXA{keys: newKeyPool(keys), client: httpx.Default()}
 }
 
 func (e *EXA) Search(ctx context.Context, query string, limit int) ([]Result, error) {
@@ -48,27 +54,11 @@ func (e *EXA) Search(ctx context.Context, query string, limit int) ([]Result, er
 	}
 
 	// Step 2 : Send this request to EXA
-	endpoint := "https://mcp.exa.ai/mcp"
-	if e.apiKey != nil && strings.TrimSpace(*e.apiKey) != "" {
-		v := url.Values{}
-		v.Set("exaApiKey", strings.TrimSpace(*e.apiKey))
-		endpoint += "?" + v.Encode()
-	}
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(encoded))
+	resp, err := e.response(ctx, encoded)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json, text/event-stream")
-
-	resp, err := e.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("exa request failed: %w", err)
-	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("exa returned status %d", resp.StatusCode)
-	}
 
 	// Step 3 : Parse the SSE-like response
 	raw, err := io.ReadAll(resp.Body)
@@ -103,6 +93,75 @@ func (e *EXA) Search(ctx context.Context, query string, limit int) ([]Result, er
 	}
 
 	return results, nil
+}
+
+func (e *EXA) response(ctx context.Context, body []byte) (*http.Response, error) {
+	key := e.keys.pick()
+	resp, err := e.request(ctx, body, key)
+	if err != nil {
+		return nil, err
+	}
+	if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusTooManyRequests) && e.keys.size() > 1 {
+		closeSearchResponse(resp)
+		key = e.keys.pickDifferent(key)
+		resp, err = e.request(ctx, body, key)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return resp, nil
+	case http.StatusUnauthorized:
+		closeSearchResponse(resp)
+		return nil, fmt.Errorf("exa: invalid API key (%s; set via: ketch config set exa_api_key <key>)", e.keys.keyLabel(key))
+	case http.StatusTooManyRequests:
+		closeSearchResponse(resp)
+		return nil, fmt.Errorf("exa: rate limited (%s)", e.keys.keyLabel(key))
+	default:
+		status := resp.StatusCode
+		closeSearchResponse(resp)
+		return nil, fmt.Errorf("exa returned status %d", status)
+	}
+}
+
+func (e *EXA) request(ctx context.Context, body []byte, key string) (*http.Response, error) {
+	endpoint := "https://mcp.exa.ai/mcp"
+	if key != "" {
+		v := url.Values{}
+		v.Set("exaApiKey", key)
+		endpoint += "?" + v.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, safeEXARequestError(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	resp, err := e.client.Do(req)
+	if err != nil {
+		return nil, safeEXARequestError(err)
+	}
+	return resp, nil
+}
+
+// safeEXARequestError deliberately drops the original transport error because
+// net/http includes req.URL in errors from Client.Do, and Exa credentials live
+// in that URL's query string. Cancellation sentinels remain discoverable for
+// CLI/MCP classification, but no URL or lower-level error text is retained.
+func safeEXARequestError(err error) error {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return fmt.Errorf("exa: request failed: %w", context.Canceled)
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("exa: request failed: %w", context.DeadlineExceeded)
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return errors.New("exa: request failed: timed out")
+	}
+	return errors.New("exa: request failed: transport error")
 }
 
 // extractSSEPayload scans raw SSE bytes and returns the last non-empty data:

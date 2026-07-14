@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/1broseidon/ketch/cache"
 	"github.com/1broseidon/ketch/scrape"
@@ -44,6 +46,69 @@ func exaEndpoint(apiKey string) string {
 		endpoint += "?" + v.Encode()
 	}
 	return endpoint
+}
+
+// probeKeyPool checks every effective key concurrently and reports the worst
+// outcome. A rejected key therefore marks the whole pool misconfigured, even
+// if another key succeeds. Details identify ordinals only and never values.
+func probeKeyPool(keys []string, probe func(string) (Status, string)) (Status, string) {
+	if len(keys) == 0 {
+		return probe("")
+	}
+	type outcome struct {
+		status Status
+		detail string
+	}
+	outcomes := make([]outcome, len(keys))
+	var wg sync.WaitGroup
+	for i, key := range keys {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			status, detail := probe(key)
+			outcomes[i] = outcome{status: status, detail: detail}
+		}()
+	}
+	wg.Wait()
+
+	worst := StatusOK
+	for _, result := range outcomes {
+		if doctorStatusPriority(result.status) > doctorStatusPriority(worst) {
+			worst = result.status
+		}
+	}
+
+	var details []string
+	for i, result := range outcomes {
+		if result.status != worst || result.detail == "" {
+			continue
+		}
+		details = append(details, fmt.Sprintf("key %d of %d: %s", i+1, len(keys), result.detail))
+	}
+	if len(details) > 0 {
+		return worst, strings.Join(details, "; ")
+	}
+	if worst == StatusOK && len(keys) > 1 {
+		return StatusOK, fmt.Sprintf("%d keys accepted", len(keys))
+	}
+	return worst, ""
+}
+
+func doctorStatusPriority(status Status) int {
+	switch status {
+	case StatusMisconfigured:
+		return 5
+	case StatusUnreachable:
+		return 4
+	case StatusNoKey:
+		return 3
+	case StatusOK:
+		return 2
+	case StatusSkipped:
+		return 1
+	default:
+		return 0
+	}
 }
 
 // get performs a GET with the given headers and returns the response with its
@@ -232,6 +297,54 @@ func probeMCP(ctx context.Context, client *http.Client, endpoint, name string) (
 		return StatusOK, ""
 	}
 	return StatusUnreachable, fmt.Sprintf("%s returned status %d", name, resp.StatusCode)
+}
+
+// probeExa validates Exa credentials explicitly; unlike generic hosted MCP
+// reachability, 401/403 means a configured key was rejected and 429 confirms
+// that the credential reached the service.
+func probeExa(ctx context.Context, client *http.Client, endpoint string, keyed bool) (Status, string) {
+	body := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, body)
+	if err != nil {
+		return StatusUnreachable, exaProbeErrDetail(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	resp, err := client.Do(req)
+	if err != nil {
+		return StatusUnreachable, exaProbeErrDetail(err)
+	}
+	defer drain(resp)
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return StatusOK, ""
+	case http.StatusUnauthorized, http.StatusForbidden:
+		if keyed {
+			return StatusMisconfigured, "API key rejected (ketch config set exa_api_key <key>)"
+		}
+		return StatusUnreachable, fmt.Sprintf("exa returned status %d", resp.StatusCode)
+	case http.StatusTooManyRequests:
+		return StatusOK, "reachable, key accepted (rate limited)"
+	default:
+		return StatusUnreachable, fmt.Sprintf("exa returned status %d", resp.StatusCode)
+	}
+}
+
+// exaProbeErrDetail never renders the original error: net/http transport
+// errors include the request URL, whose query string carries the Exa API key.
+func exaProbeErrDetail(err error) string {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "request failed: cancelled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "request failed: timed out"
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return "request failed: timed out"
+	}
+	return "request failed: transport error"
 }
 
 // probeReachable checks that a base URL answers at all (used for Sourcegraph,

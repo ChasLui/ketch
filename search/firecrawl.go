@@ -18,16 +18,17 @@ const firecrawlSearchEndpoint = "https://api.firecrawl.dev/v2/search"
 
 // Firecrawl searches the web via the Firecrawl v2 search API.
 type Firecrawl struct {
-	apiKey string
+	keys   keyPool
 	client *http.Client
 }
 
 // NewFirecrawl creates a new Firecrawl search backend.
 func NewFirecrawl(apiKey string) *Firecrawl {
-	return &Firecrawl{
-		apiKey: apiKey,
-		client: httpx.Default(),
-	}
+	return newFirecrawlWithKeys([]string{apiKey})
+}
+
+func newFirecrawlWithKeys(keys []string) *Firecrawl {
+	return &Firecrawl{keys: newKeyPool(keys), client: httpx.Default()}
 }
 
 type firecrawlRequest struct {
@@ -64,24 +65,29 @@ func (f *Firecrawl) Search(ctx context.Context, query string, limit int) ([]Resu
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", firecrawlSearchEndpoint, bytes.NewReader(body))
+	key := f.keys.pick()
+	resp, err := f.request(ctx, body, key)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+f.apiKey)
-
-	resp, err := f.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("firecrawl request failed: %w", err)
+	if firecrawlRetryableStatus(resp.StatusCode) && f.keys.size() > 1 {
+		closeSearchResponse(resp)
+		key = f.keys.pickDifferent(key)
+		resp, err = f.request(ctx, body, key)
+		if err != nil {
+			return nil, err
+		}
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusPaymentRequired {
-		return nil, fmt.Errorf("firecrawl: invalid API key (set via: ketch config set firecrawl_api_key <key>)")
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("firecrawl: invalid API key (%s; set via: ketch config set firecrawl_api_key <key>)", f.keys.keyLabel(key))
+	}
+	if resp.StatusCode == http.StatusPaymentRequired {
+		return nil, fmt.Errorf("firecrawl: payment required (%s)", f.keys.keyLabel(key))
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, fmt.Errorf("firecrawl: rate limited")
+		return nil, fmt.Errorf("firecrawl: rate limited (%s)", f.keys.keyLabel(key))
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, firecrawlStatusError(resp)
@@ -108,6 +114,24 @@ func (f *Firecrawl) Search(ctx context.Context, query string, limit int) ([]Resu
 	}
 
 	return results, nil
+}
+
+func (f *Firecrawl) request(ctx context.Context, body []byte, key string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, firecrawlSearchEndpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+key)
+	resp, err := f.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("firecrawl request failed: %w", err)
+	}
+	return resp, nil
+}
+
+func firecrawlRetryableStatus(status int) bool {
+	return status == http.StatusUnauthorized || status == http.StatusPaymentRequired || status == http.StatusTooManyRequests
 }
 
 func firecrawlStatusError(resp *http.Response) error {

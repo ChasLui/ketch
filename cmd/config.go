@@ -24,9 +24,13 @@ type configInfo struct {
 	Backend                            string            `json:"backend"`
 	SearxngURL                         string            `json:"searxng_url"`
 	BraveAPIKeySet                     bool              `json:"brave_api_key_set"`
+	BraveAPIKeysCount                  int               `json:"brave_api_keys_count"`
 	ExaAPIKeySet                       bool              `json:"exa_api_key_set"`
+	ExaAPIKeysCount                    int               `json:"exa_api_keys_count"`
 	FirecrawlAPIKeySet                 bool              `json:"firecrawl_api_key_set"`
+	FirecrawlAPIKeysCount              int               `json:"firecrawl_api_keys_count"`
 	KeenableAPIKeySet                  bool              `json:"keenable_api_key_set"`
+	KeenableAPIKeysCount               int               `json:"keenable_api_keys_count"`
 	Limit                              int               `json:"limit"`
 	CacheTTL                           string            `json:"cache_ttl"`
 	Browser                            string            `json:"browser,omitempty"`
@@ -81,16 +85,31 @@ func init() {
 func runConfigShow(_ *cobra.Command, _ []string) error {
 	c := config.Load()
 	path, _ := config.Path()
-	_, ghSource := c.ResolveGithubToken()
+	info := buildConfigInfo(c, path)
 
-	info := configInfo{
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(info)
+}
+
+func buildConfigInfo(c config.Config, path string) configInfo {
+	_, ghSource := c.ResolveGithubToken()
+	braveKeys := c.BraveKeys()
+	exaKeys := c.ExaKeys()
+	firecrawlKeys := c.FirecrawlKeys()
+	keenableKeys := c.KeenableKeys()
+	return configInfo{
 		ConfigPath:                         path,
 		Backend:                            c.Backend,
 		SearxngURL:                         c.SearxngURL,
-		BraveAPIKeySet:                     c.BraveAPIKey != "",
-		ExaAPIKeySet:                       c.ExaAPIKey != "",
-		FirecrawlAPIKeySet:                 c.FirecrawlAPIKey != "",
-		KeenableAPIKeySet:                  c.KeenableAPIKey != "",
+		BraveAPIKeySet:                     len(braveKeys) > 0,
+		BraveAPIKeysCount:                  len(braveKeys),
+		ExaAPIKeySet:                       len(exaKeys) > 0,
+		ExaAPIKeysCount:                    len(exaKeys),
+		FirecrawlAPIKeySet:                 len(firecrawlKeys) > 0,
+		FirecrawlAPIKeysCount:              len(firecrawlKeys),
+		KeenableAPIKeySet:                  len(keenableKeys) > 0,
+		KeenableAPIKeysCount:               len(keenableKeys),
 		Limit:                              c.Limit,
 		CacheTTL:                           c.CacheTTL,
 		Browser:                            c.Browser,
@@ -108,10 +127,6 @@ func runConfigShow(_ *cobra.Command, _ []string) error {
 		AvailableCodeBackends:              config.AvailableCodeBackends(),
 		AvailableDocBackends:               config.AvailableDocBackends(),
 	}
-
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(info)
 }
 
 func runConfigInit(_ *cobra.Command, _ []string) error {
@@ -144,8 +159,46 @@ func runConfigSet(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "set %s = %s\n", key, value)
+	fmt.Fprintln(os.Stderr, configSetAcknowledgement(c, key, value))
 	return nil
+}
+
+func configSetAcknowledgement(c config.Config, key, value string) string {
+	if count, item, ok := configSecretCount(c, key); ok {
+		if count != 1 {
+			item += "s"
+		}
+		return fmt.Sprintf("set %s (%d %s)", key, count, item)
+	}
+	return fmt.Sprintf("set %s = %s", key, value)
+}
+
+// configSecretCount recognizes every secret accepted by config set. API-key
+// counts use the effective de-duplicated pools, not the raw field lengths.
+func configSecretCount(c config.Config, key string) (int, string, bool) {
+	switch key {
+	case "brave_api_key", "brave_api_keys":
+		return len(c.BraveKeys()), "key", true
+	case "exa_api_key", "exa_api_keys":
+		return len(c.ExaKeys()), "key", true
+	case "firecrawl_api_key", "firecrawl_api_keys":
+		return len(c.FirecrawlKeys()), "key", true
+	case "keenable_api_key", "keenable_api_keys":
+		return len(c.KeenableKeys()), "key", true
+	case "context7_api_key":
+		return boolCount(c.Context7APIKey != ""), "key", true
+	case "github_token":
+		return boolCount(c.GithubToken != ""), "token", true
+	default:
+		return 0, "", false
+	}
+}
+
+func boolCount(set bool) int {
+	if set {
+		return 1
+	}
+	return 0
 }
 
 // applyConfigSet is a flat key→field dispatch; its cyclomatic complexity scales
@@ -160,12 +213,20 @@ func applyConfigSet(c *config.Config, key, value string) error {
 		c.SearxngURL = value
 	case "brave_api_key":
 		c.BraveAPIKey = value
+	case "brave_api_keys":
+		return setAPIKeys(&c.BraveAPIKeys, key, value)
 	case "exa_api_key":
 		c.ExaAPIKey = value
+	case "exa_api_keys":
+		return setAPIKeys(&c.ExaAPIKeys, key, value)
 	case "firecrawl_api_key":
 		c.FirecrawlAPIKey = value
+	case "firecrawl_api_keys":
+		return setAPIKeys(&c.FirecrawlAPIKeys, key, value)
 	case "keenable_api_key":
 		c.KeenableAPIKey = value
+	case "keenable_api_keys":
+		return setAPIKeys(&c.KeenableAPIKeys, key, value)
 	case "limit":
 		return setLimit(c, value)
 	case "cache_ttl":
@@ -191,8 +252,20 @@ func applyConfigSet(c *config.Config, key, value string) error {
 	case "external_pdf_to_md_converter_timeout_sec":
 		return setExternalPDFConverterTimeout(c, value)
 	default:
-		return exitErrf(ExitValidation, "unknown key: %s (valid: backend, searxng_url, brave_api_key, exa_api_key, firecrawl_api_key, keenable_api_key, limit, cache_ttl, browser, code_backend, docs_backend, context7_api_key, sourcegraph_url, github_token, url_rewrites, spa_markers, external_pdf_to_md_converter_command, external_pdf_to_md_converter_timeout_sec)", key)
+		return exitErrf(ExitValidation, "unknown key: %s (valid: backend, searxng_url, brave_api_key, brave_api_keys, exa_api_key, exa_api_keys, firecrawl_api_key, firecrawl_api_keys, keenable_api_key, keenable_api_keys, limit, cache_ttl, browser, code_backend, docs_backend, context7_api_key, sourcegraph_url, github_token, url_rewrites, spa_markers, external_pdf_to_md_converter_command, external_pdf_to_md_converter_timeout_sec)", key)
 	}
+	return nil
+}
+
+func setAPIKeys(destination *[]string, key, value string) error {
+	var keys []string
+	if err := json.Unmarshal([]byte(value), &keys); err != nil {
+		return exitErrf(ExitValidation, "%s must be a JSON array of strings: %w", key, err)
+	}
+	if keys == nil {
+		return exitErrf(ExitValidation, "%s must be a JSON array of strings, not null", key)
+	}
+	*destination = keys
 	return nil
 }
 

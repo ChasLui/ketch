@@ -21,10 +21,11 @@ var ErrUnknownBackend = errors.New("unknown search backend")
 func NewFromConfig(cfg *config.Config, backend, searxngURL string) (Searcher, error) {
 	switch backend {
 	case "brave":
-		if cfg.BraveAPIKey == "" {
+		keys := cfg.BraveKeys()
+		if len(keys) == 0 {
 			return nil, fmt.Errorf("brave: API key not set (get one free at https://brave.com/search/api/ then: ketch config set brave_api_key <key>)")
 		}
-		return NewBrave(cfg.BraveAPIKey), nil
+		return newBraveWithKeys(keys), nil
 	case "searxng":
 		if searxngURL == "" {
 			searxngURL = cfg.SearxngURL
@@ -33,22 +34,15 @@ func NewFromConfig(cfg *config.Config, backend, searxngURL string) (Searcher, er
 	case "ddg":
 		return NewDDG(), nil
 	case "exa":
-		var apiKey *string
-		if cfg.ExaAPIKey != "" {
-			apiKey = &cfg.ExaAPIKey
-		}
-		return NewEXA(apiKey), nil
+		return newEXAWithKeys(cfg.ExaKeys()), nil
 	case "firecrawl":
-		if cfg.FirecrawlAPIKey == "" {
+		keys := cfg.FirecrawlKeys()
+		if len(keys) == 0 {
 			return nil, fmt.Errorf("firecrawl: API key not set (get one free at https://firecrawl.dev then: ketch config set firecrawl_api_key <key>)")
 		}
-		return NewFirecrawl(cfg.FirecrawlAPIKey), nil
+		return newFirecrawlWithKeys(keys), nil
 	case "keenable":
-		var apiKey *string
-		if cfg.KeenableAPIKey != "" {
-			apiKey = &cfg.KeenableAPIKey
-		}
-		return NewKeenable(apiKey), nil
+		return newKeenableWithKeys(cfg.KeenableKeys()), nil
 	default:
 		return nil, fmt.Errorf("%w %q (available: %s)", ErrUnknownBackend, backend, strings.Join(config.AvailableBackends(), ", "))
 	}

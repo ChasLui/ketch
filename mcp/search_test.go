@@ -51,6 +51,36 @@ func TestRunSearchMultiValidation(t *testing.T) {
 			wantPrefix: "[precondition]",
 			wantSubstr: "firecrawl",
 		},
+		{
+			name:       "random and backend mutually exclusive",
+			in:         SearchInput{Query: "q", Random: []string{"brave"}, Backend: "ddg"},
+			wantPrefix: "[validation]",
+			wantSubstr: "mutually exclusive",
+		},
+		{
+			name:       "random and multi mutually exclusive",
+			in:         SearchInput{Query: "q", Random: []string{"brave"}, Multi: []string{"ddg"}},
+			wantPrefix: "[validation]",
+			wantSubstr: "mutually exclusive",
+		},
+		{
+			name:       "random all combined with name",
+			in:         SearchInput{Query: "q", Random: []string{"all", "brave"}},
+			wantPrefix: "[validation]",
+			wantSubstr: `"all" cannot be combined`,
+		},
+		{
+			name:       "random unknown backend",
+			in:         SearchInput{Query: "q", Random: []string{"bogus"}},
+			wantPrefix: "[validation]",
+			wantSubstr: "unknown search backend",
+		},
+		{
+			name:       "random named but unconfigured backend",
+			in:         SearchInput{Query: "q", Random: []string{"firecrawl"}},
+			wantPrefix: "[precondition]",
+			wantSubstr: "firecrawl",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -69,6 +99,18 @@ func TestRunSearchMultiValidation(t *testing.T) {
 }
 
 // TestCleanMultiNames covers the trim/dedup normalization the handler applies.
+func TestRunSearchRandomAllPreservesCancellation(t *testing.T) {
+	cfg := config.Defaults()
+	s := &Server{cfg: &cfg}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := s.runSearch(ctx, SearchInput{Query: "q", Random: []string{"all"}})
+	if err == nil || !strings.HasPrefix(err.Error(), "[cancelled] ") {
+		t.Fatalf("error = %v, want [cancelled]", err)
+	}
+}
+
 func TestCleanMultiNames(t *testing.T) {
 	got := cleanMultiNames([]string{" brave ", "ddg", "brave", "", "exa"})
 	if strings.Join(got, ",") != "brave,ddg,exa" {
