@@ -102,10 +102,10 @@ func Run(ctx context.Context, cfg *config.Config, timeout time.Duration) []Check
 // backend whose API key is explicitly set, the configured browser, or the
 // cache. Optional backends that merely lack a key stay informational.
 func buildSpecs(cfg *config.Config, client *http.Client) []spec {
-	braveKey := cfg.BraveAPIKey
-	exaKey := cfg.ExaAPIKey
-	firecrawlKey := cfg.FirecrawlAPIKey
-	keenableKey := cfg.KeenableAPIKey
+	braveKeys := cfg.BraveKeys()
+	exaKeys := cfg.ExaKeys()
+	firecrawlKeys := cfg.FirecrawlKeys()
+	keenableKeys := cfg.KeenableKeys()
 	c7Key := cfg.Context7APIKey
 	searxngURL := cfg.SearxngURL
 	sourcegraphURL := cfg.SourcegraphURL
@@ -113,8 +113,10 @@ func buildSpecs(cfg *config.Config, client *http.Client) []spec {
 	resolveGithub := cfg.ResolveGithubToken
 
 	return []spec{
-		{"search", "brave", cfg.Backend == "brave" || braveKey != "", func(ctx context.Context) (Status, string) {
-			return probeBrave(ctx, client, braveEndpoint, braveKey)
+		{"search", "brave", cfg.Backend == "brave" || len(braveKeys) > 0, func(ctx context.Context) (Status, string) {
+			return probeKeyPool(braveKeys, func(key string) (Status, string) {
+				return probeBrave(ctx, client, braveEndpoint, key)
+			})
 		}},
 		{"search", "ddg", cfg.Backend == "ddg", func(ctx context.Context) (Status, string) {
 			return probeDDG(ctx, client, ddgEndpoint)
@@ -122,14 +124,20 @@ func buildSpecs(cfg *config.Config, client *http.Client) []spec {
 		{"search", "searxng", cfg.Backend == "searxng", func(ctx context.Context) (Status, string) {
 			return probeSearxng(ctx, client, searxngURL)
 		}},
-		{"search", "exa", cfg.Backend == "exa" || exaKey != "", func(ctx context.Context) (Status, string) {
-			return probeMCP(ctx, client, exaEndpoint(exaKey), "exa")
+		{"search", "exa", cfg.Backend == "exa" || len(exaKeys) > 0, func(ctx context.Context) (Status, string) {
+			return probeKeyPool(exaKeys, func(key string) (Status, string) {
+				return probeExa(ctx, client, exaEndpoint(key), key != "")
+			})
 		}},
-		{"search", "firecrawl", cfg.Backend == "firecrawl" || firecrawlKey != "", func(ctx context.Context) (Status, string) {
-			return probeFirecrawl(ctx, client, firecrawlSearch, firecrawlKey)
+		{"search", "firecrawl", cfg.Backend == "firecrawl" || len(firecrawlKeys) > 0, func(ctx context.Context) (Status, string) {
+			return probeKeyPool(firecrawlKeys, func(key string) (Status, string) {
+				return probeFirecrawl(ctx, client, firecrawlSearch, key)
+			})
 		}},
-		{"search", "keenable", cfg.Backend == "keenable" || keenableKey != "", func(ctx context.Context) (Status, string) {
-			return probeKeenable(ctx, client, keenableEndpoint, keenableKey)
+		{"search", "keenable", cfg.Backend == "keenable" || len(keenableKeys) > 0, func(ctx context.Context) (Status, string) {
+			return probeKeyPool(keenableKeys, func(key string) (Status, string) {
+				return probeKeenable(ctx, client, keenableEndpoint, key)
+			})
 		}},
 		{"code", "grepapp", cfg.CodeBackend == "grepapp", func(ctx context.Context) (Status, string) {
 			return probeMCP(ctx, client, grepAppEndpoint, "grep.app")

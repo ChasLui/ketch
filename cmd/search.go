@@ -18,9 +18,11 @@ import (
 var searchCmd = &cobra.Command{
 	Use:   "search <query>",
 	Short: "Search the web and return results",
-	Long:  `Search the web using Brave, DuckDuckGo, SearXNG, Exa, Firecrawl, or Keenable (default: the configured backend; brave if unset). Add --scrape to fetch and extract full content from results.`,
-	Args:  exitArgs(cobra.MinimumNArgs(1)),
-	RunE:  runSearch,
+	Long: `Search the web using Brave, DuckDuckGo, SearXNG, Exa, Firecrawl, or Keenable (default: the configured backend; brave if unset).
+
+Add --scrape to fetch and extract full content from results. Use --multi to query and rank-fuse several providers, or --random to shuffle providers and stop at the first successful response. --multi, --random, and --backend are mutually exclusive.`,
+	Args: exitArgs(cobra.MinimumNArgs(1)),
+	RunE: runSearch,
 }
 
 func init() {
@@ -39,6 +41,9 @@ func init() {
 	searchCmd.Flags().String("multi", "",
 		"federated search across backends: comma-separated list, or bare/=all for every usable backend (use the = form, e.g. --multi=brave,exa)")
 	searchCmd.Flags().Lookup("multi").NoOptDefVal = "all"
+	searchCmd.Flags().String("random", "",
+		"random provider with fallback: comma-separated list, or bare/=all for every usable backend (use the = form, e.g. --random=brave,exa)")
+	searchCmd.Flags().Lookup("random").NoOptDefVal = "all"
 }
 
 func runSearch(cmd *cobra.Command, args []string) error {
@@ -51,8 +56,14 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	trim, _ := cmd.Flags().GetBool("trim")
 	minimal, _ := cmd.Flags().GetBool("minimal")
 
+	if cmd.Flags().Changed("multi") && cmd.Flags().Changed("random") {
+		return exitErrf(ExitValidation, "--multi and --random are mutually exclusive")
+	}
 	if cmd.Flags().Changed("multi") {
 		return runMultiSearch(cmd, query, limit, doScrape, asJSON, trim, maxChars, minimal)
+	}
+	if cmd.Flags().Changed("random") {
+		return runRandomSearch(cmd, query, limit, doScrape, asJSON, trim, maxChars, minimal)
 	}
 
 	searcher, err := newSearcher(cmd, backend)
@@ -255,11 +266,59 @@ func runMultiSearch(cmd *cobra.Command, query string, limit int, doScrape, asJSO
 	return nil
 }
 
+// runRandomSearch handles `ketch search --random`: each invocation shuffles
+// the requested providers and falls back sequentially only when a provider
+// errors. The chosen provider is reported explicitly.
+func runRandomSearch(cmd *cobra.Command, query string, limit int, doScrape, asJSON, trim bool, maxChars int, minimal bool) error {
+	names, err := resolveRandomNames(cmd, query)
+	if err != nil {
+		return err
+	}
+
+	searxngURL, _ := cmd.Flags().GetString("searxng-url")
+	randomSearch, err := search.NewRandomFromConfig(&cfg, names, searxngURL)
+	if err != nil {
+		return backendErr(err, search.ErrUnknownBackend)
+	}
+	results, selected, failures, err := randomSearch.Search(cmd.Context(), query, limit)
+	if err != nil {
+		return exitErrf(ExitUpstream, "search failed: %w", err)
+	}
+	for _, failure := range failures {
+		fmt.Fprintf(os.Stderr, "warn: %s: %v\n", failure.Backend, failure.Err)
+	}
+
+	if doScrape {
+		scraper, err := newScraper()
+		if err != nil {
+			return err
+		}
+		defer scraper.Close()
+		pc := newPageCache(false)
+		return searchScrape(cmd.Context(), results, scraper, pc, asJSON, trim, maxChars, minimal)
+	}
+	if asJSON {
+		return json.NewEncoder(os.Stdout).Encode(results)
+	}
+	if minimal {
+		for _, result := range results {
+			fmt.Printf("%s\t%s\t%s\n", result.URL, result.Title, result.Description)
+		}
+		return nil
+	}
+
+	printRandomPlain(query, selected, results, failures)
+	return nil
+}
+
 // resolveMultiNames validates the --multi flag combination and resolves the
 // requested backend-name list ("all" sentinel included).
 func resolveMultiNames(cmd *cobra.Command, query string) ([]string, error) {
 	if cmd.Flags().Changed("backend") {
 		return nil, exitErrf(ExitValidation, "--multi and --backend are mutually exclusive")
+	}
+	if cmd.Flags().Changed("random") {
+		return nil, exitErrf(ExitValidation, "--multi and --random are mutually exclusive")
 	}
 
 	multiVal, _ := cmd.Flags().GetString("multi")
@@ -284,9 +343,57 @@ func resolveMultiNames(cmd *cobra.Command, query string) ([]string, error) {
 	return names, nil
 }
 
+// resolveRandomNames mirrors --multi parsing while enforcing that random
+// selection cannot be combined with a fixed backend or federated search.
+func resolveRandomNames(cmd *cobra.Command, query string) ([]string, error) {
+	if cmd.Flags().Changed("backend") {
+		return nil, exitErrf(ExitValidation, "--random and --backend are mutually exclusive")
+	}
+	if cmd.Flags().Changed("multi") {
+		return nil, exitErrf(ExitValidation, "--random and --multi are mutually exclusive")
+	}
+
+	randomValue, _ := cmd.Flags().GetString("random")
+	names := parseMultiNames(randomValue)
+	for _, name := range names {
+		if name == "all" && len(names) > 1 {
+			return nil, exitErrf(ExitValidation, `--random: "all" cannot be combined with other backend names`)
+		}
+	}
+	if len(names) == 0 {
+		names = []string{"all"}
+	}
+	if randomValue == "all" && looksLikeBackendList(query) {
+		return nil, exitErrf(ExitValidation, "--random needs '=' for a backend list: did you mean --random=%s?", query)
+	}
+	return names, nil
+}
+
 // printMultiPlain renders the fused results with multi frontmatter:
 // backends: lists the engines that contributed; failed: (only when partial)
 // lists the ones that errored — together the resolved set.
+func printRandomPlain(query, selected string, results []search.Result, failures []search.BackendError) {
+	fmt.Println("---")
+	fmt.Printf("query: %s\n", query)
+	fmt.Printf("backend: %s\n", selected)
+	if len(failures) > 0 {
+		parts := make([]string, len(failures))
+		for i, failure := range failures {
+			parts[i] = fmt.Sprintf("%s (%v)", failure.Backend, failure.Err)
+		}
+		fmt.Printf("failed: %s\n", strings.Join(parts, ", "))
+	}
+	fmt.Printf("result_count: %d\n", len(results))
+	fmt.Println("---")
+	for _, result := range results {
+		fmt.Printf("%s\n  %s\n", result.Title, result.URL)
+		if result.Description != "" {
+			fmt.Printf("  %s\n", result.Description)
+		}
+		fmt.Println()
+	}
+}
+
 func printMultiPlain(query string, results []search.Result, berrs []search.BackendError, resolved []string) {
 	failed := map[string]bool{}
 	for _, be := range berrs {

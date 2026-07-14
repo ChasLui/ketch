@@ -2,11 +2,13 @@ package doctor
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/1broseidon/ketch/config"
@@ -242,6 +244,29 @@ func TestProbeMCPServerError(t *testing.T) {
 	}
 }
 
+func TestProbeExaTransportErrorNeverExposesKeyedURL(t *testing.T) {
+	const secret = "exa-doctor-secret"
+	client := &http.Client{Transport: probeRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return nil, errors.New("dial failure for " + req.URL.String())
+	})}
+	status, detail := probeExa(testCtx(t), client, exaEndpoint(secret), true)
+	if status != StatusUnreachable {
+		t.Fatalf("status = %q, want unreachable", status)
+	}
+	if detail != "request failed: transport error" {
+		t.Fatal("Exa probe returned an unexpected sanitized error class")
+	}
+	if strings.Contains(detail, secret) || strings.Contains(detail, "exaApiKey") || strings.Contains(detail, "?") {
+		t.Fatal("Exa probe detail exposed request query data")
+	}
+}
+
+type probeRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f probeRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
 // --- keenable ---
 
 func TestProbeKeenableKeyless(t *testing.T) {
@@ -465,6 +490,45 @@ func TestBuildSpecsRequiredGating(t *testing.T) {
 	}
 	if s := findSpec(t, specs, "browser", "none"); s.required {
 		t.Error("unconfigured browser must not gate the exit code")
+	}
+}
+
+func TestProbeKeyPoolChecksEveryKeyAndRejectsPool(t *testing.T) {
+	keys := []string{"accepted-secret", "rejected-secret", "rate-limited-secret"}
+	var mu sync.Mutex
+	var probed []string
+	status, detail := probeKeyPool(keys, func(key string) (Status, string) {
+		mu.Lock()
+		probed = append(probed, key)
+		mu.Unlock()
+		if key == "rejected-secret" {
+			return StatusMisconfigured, "API key rejected"
+		}
+		return StatusOK, ""
+	})
+	if status != StatusMisconfigured {
+		t.Fatalf("status = %q, want misconfigured", status)
+	}
+	if len(probed) != len(keys) {
+		t.Fatalf("probed %d keys, want %d", len(probed), len(keys))
+	}
+	if !strings.Contains(detail, "key 2 of 3") {
+		t.Fatalf("detail = %q, want rejected key ordinal", detail)
+	}
+	for _, key := range keys {
+		if strings.Contains(detail, key) {
+			t.Fatalf("detail exposed key %q: %s", key, detail)
+		}
+	}
+}
+
+func TestBuildSpecsPluralKeyedBackendIsRequired(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Backend = "ddg"
+	cfg.BraveAPIKeys = []string{"plural-only"}
+	specs := buildSpecs(&cfg, http.DefaultClient)
+	if candidate := findSpec(t, specs, "search", "brave"); !candidate.required {
+		t.Error("brave with only a plural key must be required")
 	}
 }
 

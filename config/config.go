@@ -17,9 +17,13 @@ type Config struct {
 	Backend                            string            `json:"backend"`
 	SearxngURL                         string            `json:"searxng_url"`
 	BraveAPIKey                        string            `json:"brave_api_key,omitempty"`
+	BraveAPIKeys                       []string          `json:"brave_api_keys,omitempty"`
 	ExaAPIKey                          string            `json:"exa_api_key,omitempty"`
+	ExaAPIKeys                         []string          `json:"exa_api_keys,omitempty"`
 	FirecrawlAPIKey                    string            `json:"firecrawl_api_key,omitempty"`
+	FirecrawlAPIKeys                   []string          `json:"firecrawl_api_keys,omitempty"`
 	KeenableAPIKey                     string            `json:"keenable_api_key,omitempty"`
+	KeenableAPIKeys                    []string          `json:"keenable_api_keys,omitempty"`
 	Limit                              int               `json:"limit"`
 	CacheTTL                           string            `json:"cache_ttl"`
 	Browser                            string            `json:"browser,omitempty"` // "chrome", "chromium", or absolute path; empty = disabled
@@ -33,6 +37,40 @@ type Config struct {
 	ExternalPDFToMDConverterCommand    string            `json:"external_pdf_to_md_converter_command,omitempty"`
 	ExternalPDFToMDConverterTimeoutSec int               `json:"external_pdf_to_md_converter_timeout_sec"`
 }
+
+// mergeKeys builds an effective key pool with the legacy singular key first.
+// It trims whitespace, drops blank entries, de-duplicates while preserving
+// order, and returns a fresh slice.
+func mergeKeys(single string, list []string) []string {
+	merged := make([]string, 0, len(list)+1)
+	seen := make(map[string]struct{}, len(list)+1)
+	for _, key := range append([]string{single}, list...) {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, key)
+	}
+	return merged
+}
+
+// BraveKeys returns an immutable copy of the effective Brave API key pool.
+func (c Config) BraveKeys() []string { return mergeKeys(c.BraveAPIKey, c.BraveAPIKeys) }
+
+// ExaKeys returns an immutable copy of the effective Exa API key pool.
+func (c Config) ExaKeys() []string { return mergeKeys(c.ExaAPIKey, c.ExaAPIKeys) }
+
+// FirecrawlKeys returns an immutable copy of the effective Firecrawl API key pool.
+func (c Config) FirecrawlKeys() []string {
+	return mergeKeys(c.FirecrawlAPIKey, c.FirecrawlAPIKeys)
+}
+
+// KeenableKeys returns an immutable copy of the effective Keenable API key pool.
+func (c Config) KeenableKeys() []string { return mergeKeys(c.KeenableAPIKey, c.KeenableAPIKeys) }
 
 // ResolveGithubToken returns a token and the source it came from, walking the
 // resolution chain: explicit config → $GITHUB_TOKEN → $GH_TOKEN → `gh auth token`.
@@ -134,5 +172,19 @@ func Save(cfg Config) error {
 		return err
 	}
 
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	// OpenFile preserves the mode of an existing file, so tighten it explicitly
+	// before writing credentials.
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }

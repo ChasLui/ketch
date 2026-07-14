@@ -25,17 +25,21 @@ const keenableTitle = "Ketch"
 // AI agents. It is keyless by default (rate-limited); an optional API key lifts
 // the hourly cap and switches to the authenticated endpoint.
 type Keenable struct {
-	apiKey *string
+	keys   keyPool
 	client *http.Client
 }
 
 // NewKeenable creates a new Keenable search backend. A nil or blank apiKey uses
 // the keyless public endpoint.
 func NewKeenable(apiKey *string) *Keenable {
-	return &Keenable{
-		apiKey: apiKey,
-		client: httpx.Default(),
+	if apiKey == nil {
+		return newKeenableWithKeys(nil)
 	}
+	return newKeenableWithKeys([]string{*apiKey})
+}
+
+func newKeenableWithKeys(keys []string) *Keenable {
+	return &Keenable{keys: newKeyPool(keys), client: httpx.Default()}
 }
 
 type keenableResponse struct {
@@ -59,39 +63,26 @@ func (k *Keenable) Search(ctx context.Context, query string, limit int) ([]Resul
 		return nil, err
 	}
 
-	// Keyless by default; a configured key switches to the authenticated path.
-	path := "/v1/search/public"
-	key := ""
-	if k.apiKey != nil {
-		key = strings.TrimSpace(*k.apiKey)
-	}
-	if key != "" {
-		path = "/v1/search"
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", keenableBaseURL+path, bytes.NewReader(body))
+	key := k.keys.pick()
+	resp, err := k.request(ctx, body, key)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "keenable-ketch")
-	req.Header.Set("X-Keenable-Title", keenableTitle)
-	if key != "" {
-		req.Header.Set("X-API-Key", key)
-	}
-
-	resp, err := k.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("keenable request failed: %w", err)
+	if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusTooManyRequests) && k.keys.size() > 1 {
+		closeSearchResponse(resp)
+		key = k.keys.pickDifferent(key)
+		resp, err = k.request(ctx, body, key)
+		if err != nil {
+			return nil, err
+		}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("keenable: invalid API key (set via: ketch config set keenable_api_key <key>)")
+		return nil, fmt.Errorf("keenable: invalid API key (%s; set via: ketch config set keenable_api_key <key>)", k.keys.keyLabel(key))
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, fmt.Errorf("keenable: rate limited (set a key to lift the cap: ketch config set keenable_api_key <key>)")
+		return nil, fmt.Errorf("keenable: rate limited (%s; set a key to lift the cap: ketch config set keenable_api_key <key>)", k.keys.keyLabel(key))
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, keenableStatusError(resp)
@@ -115,6 +106,29 @@ func (k *Keenable) Search(ctx context.Context, query string, limit int) ([]Resul
 	}
 
 	return results, nil
+}
+
+func (k *Keenable) request(ctx context.Context, body []byte, key string) (*http.Response, error) {
+	path := "/v1/search/public"
+	if key != "" {
+		path = "/v1/search"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, keenableBaseURL+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "keenable-ketch")
+	req.Header.Set("X-Keenable-Title", keenableTitle)
+	if key != "" {
+		req.Header.Set("X-API-Key", key)
+	}
+	resp, err := k.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("keenable request failed: %w", err)
+	}
+	return resp, nil
 }
 
 func keenableStatusError(resp *http.Response) error {
