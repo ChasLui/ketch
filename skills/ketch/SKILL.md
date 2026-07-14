@@ -41,7 +41,7 @@ Use only these terms in ketch output.
 ## How to use this skill
 
 - Default: answer one question with one or two routed calls. Use the surface routing table, token budgets, and error control flow below.
-- `ketch research <question>`: deep multi-source research — search fan-out → scrape top hits → optional code/docs corroboration → synthesized, cited answer. Read `references/verbs/research.md`.
+- `ketch research <question>`: deep multi-source research — search fan-out → scrape top hits → optional code/docs corroboration → synthesized, cited answer. Read `references/verbs/ketch-research.md`.
 - `ketch setup`: configure backends with the operator — probe current state, propose exact commands, mutate only on confirmation. Read `references/verbs/setup.md`. Enter this verb whenever any call returns `[precondition]` / exit 5.
 
 One question = one plan. Escalate a default run into `ketch research` when the first search shows the answer is contested, multi-part, or needs corroboration.
@@ -146,7 +146,7 @@ Detail for each lives in `references/surfaces.md`.
 
 ## Reference loading
 
-- `ketch research …` → read `references/verbs/research.md` before starting.
+- `ketch research …` → read `references/verbs/ketch-research.md` before starting.
 - `ketch setup`, any `[precondition]`/exit 5, or an install → read `references/verbs/setup.md`.
 - Full flag/param tables, CLI↔MCP name mapping, backend/key matrix, or a surface behaving oddly → read `references/surfaces.md`.
 
