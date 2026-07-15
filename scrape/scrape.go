@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/1broseidon/ketch/cookies"
 	"github.com/1broseidon/ketch/extract"
 	"github.com/1broseidon/ketch/httpx"
 	"github.com/1broseidon/ketch/urlrewrite"
@@ -84,6 +85,7 @@ type Scraper struct {
 	browserMu    sync.Mutex
 	browser      BrowserConn
 	rewriter     *urlrewrite.Rewriter
+	jar          *cookies.Jar
 }
 
 // NewWithRewriter creates a Scraper with an optional browser binary and
@@ -167,7 +169,7 @@ func (s *Scraper) getBrowser() BrowserConn {
 		s.browserBin = ""
 		return nil
 	}
-	conn, err := NewBrowserConn(bin)
+	conn, err := NewBrowserConnWithCookies(bin, s.jar)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warn: browser init failed: %v\n", err)
 		s.browserBin = ""
@@ -384,6 +386,19 @@ func ContentHash(s string) string {
 	return hex.EncodeToString(h[:])[:16]
 }
 
+// CacheKey returns the page-cache key for an already-rewritten fetch URL.
+// A configured jar with live cookies gets a jar-specific namespace even when
+// no cookie matches the initial URL: a redirect may land on another host or
+// path where a cookie does match. This prevents redirected authenticated
+// content from colliding with an anonymous cache entry.
+func (s *Scraper) CacheKey(fetchURL string) string {
+	fingerprint := s.jar.Fingerprint()
+	if fingerprint == "" {
+		return fetchURL
+	}
+	return fetchURL + "\x00cookies:" + fingerprint
+}
+
 // FetchContent fetches a URL without extraction or browser fallback while
 // preserving response bytes and the server-declared content type.
 func (s *Scraper) FetchContent(ctx context.Context, rawURL string) (*FetchedContent, error) {
@@ -404,6 +419,58 @@ func (s *Scraper) Fetch(ctx context.Context, rawURL string) (string, error) {
 		return "", err
 	}
 	return string(content.Body), nil
+}
+
+// cookieRoundTripper clears any Cookie header inherited by net/http's
+// redirect machinery and rebuilds it from the jar for the URL of every hop.
+// The request is cloned so caller-owned headers are never mutated.
+type cookieRoundTripper struct {
+	base http.RoundTripper
+	jar  *cookies.Jar
+}
+
+func (t *cookieRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	cloned := req.Clone(req.Context())
+	cloned.Header = req.Header.Clone()
+	setCookieHeader(cloned, t.jar)
+	return t.base.RoundTrip(cloned)
+}
+
+func clientWithCookies(client *http.Client, jar *cookies.Jar) *http.Client {
+	cloned := *client
+	base := cloned.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	cloned.Transport = &cookieRoundTripper{base: base, jar: jar}
+	return &cloned
+}
+
+func setCookieHeader(req *http.Request, jar *cookies.Jar) {
+	// Header.Del canonicalizes its argument but would miss a non-canonical map
+	// key installed by another RoundTripper, so remove case-insensitively.
+	for key := range req.Header {
+		if strings.EqualFold(key, "Cookie") {
+			delete(req.Header, key)
+		}
+	}
+	matched := jar.For(req.URL)
+	if len(matched) == 0 {
+		return
+	}
+
+	// Build the header verbatim rather than via req.AddCookie, which sanitizes
+	// values and strips bytes such as quotes in RFC 6265 quoted strings.
+	var b strings.Builder
+	for i, ck := range matched {
+		if i > 0 {
+			b.WriteString("; ")
+		}
+		b.WriteString(ck.Name)
+		b.WriteByte('=')
+		b.WriteString(ck.Value)
+	}
+	req.Header.Set("Cookie", b.String())
 }
 
 func (s *Scraper) fetchContent(ctx context.Context, rawURL, etag, lastModified string) (*FetchedContent, http.Header, bool, error) {

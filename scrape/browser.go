@@ -3,10 +3,12 @@ package scrape
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/1broseidon/ketch/cookies"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
@@ -15,10 +17,18 @@ import (
 type rodConn struct {
 	browser  *rod.Browser
 	launcher *launcher.Launcher
+	jar      *cookies.Jar
 }
 
-// NewBrowserConn launches a headless browser and returns a connection.
+// NewBrowserConn launches a headless browser without cookie injection. This
+// legacy signature is preserved for external package callers.
 func NewBrowserConn(binPath string) (BrowserConn, error) {
+	return NewBrowserConnWithCookies(binPath, nil)
+}
+
+// NewBrowserConnWithCookies launches a headless browser and injects cookies
+// from jar (which may be nil) before each navigation.
+func NewBrowserConnWithCookies(binPath string, jar *cookies.Jar) (BrowserConn, error) {
 	l := launcher.New().Bin(binPath).Headless(true)
 	u, err := l.Launch()
 	if err != nil {
@@ -29,24 +39,76 @@ func NewBrowserConn(binPath string) (BrowserConn, error) {
 		l.Kill()
 		return nil, fmt.Errorf("connect browser: %w", err)
 	}
-	return &rodConn{browser: b, launcher: l}, nil
+	return &rodConn{browser: b, launcher: l, jar: jar}, nil
 }
 
 // Fetch navigates to a URL in a new tab and returns the rendered HTML.
 // The context bounds navigation and JS settling; if it's cancelled, the
 // underlying Rod operations unblock with the ctx error.
+//
+// Cookies are set BEFORE navigation so consent-banner walls (which read the
+// cookie on first paint) render their real content. The page is created at
+// about:blank (empty TargetCreateTarget URL) precisely so SetCookies lands
+// before the first request. Cookies persist in the shared browser context
+// across fetches within one process (CDP cookie storage is context-wide);
+// per-fetch filtering still bounds what each navigation loads. Acceptable for
+// a single-operator CLI.
 func (r *rodConn) Fetch(ctx context.Context, rawURL string) (string, error) {
-	page, err := r.browser.Context(ctx).Page(proto.TargetCreateTarget{URL: rawURL})
+	page, err := r.browser.Context(ctx).Page(proto.TargetCreateTarget{}) // about:blank
 	if err != nil {
 		return "", fmt.Errorf("create page: %w", err)
 	}
 	defer func() { _ = page.Close() }()
+
+	if params := rodCookieParams(r.jar, rawURL); len(params) > 0 {
+		if err := page.SetCookies(params); err != nil {
+			return "", fmt.Errorf("set cookies: %w", err)
+		}
+	}
+	if err := page.Navigate(rawURL); err != nil {
+		return "", fmt.Errorf("navigate: %w", err)
+	}
 
 	timedPage := page.Timeout(30 * time.Second)
 	_ = timedPage.WaitLoad()
 	_ = timedPage.WaitStable(time.Second)
 
 	return page.HTML()
+}
+
+// rodCookieParams converts jar entries matching pageURL into CDP cookie params.
+// Host-only cookies are keyed by URL (CDP derives a host-only cookie from it);
+// domain cookies pass a dot-prefixed Domain so subdomains match.
+func rodCookieParams(jar *cookies.Jar, pageURL string) []*proto.NetworkCookieParam {
+	u, err := url.Parse(pageURL)
+	if err != nil {
+		return nil
+	}
+	matched := jar.For(u)
+	params := make([]*proto.NetworkCookieParam, 0, len(matched))
+	for _, c := range matched {
+		p := &proto.NetworkCookieParam{
+			Name:     c.Name,
+			Value:    c.Value,
+			Path:     c.Path,
+			Secure:   c.Secure,
+			HTTPOnly: c.HTTPOnly,
+		}
+		if c.HostOnly {
+			scheme := "http"
+			if c.Secure {
+				scheme = "https"
+			}
+			p.URL = scheme + "://" + c.Domain + c.Path
+		} else {
+			p.Domain = "." + c.Domain
+		}
+		if !c.Expires.IsZero() {
+			p.Expires = proto.TimeSinceEpoch(c.Expires.Unix())
+		}
+		params = append(params, p)
+	}
+	return params
 }
 
 // Close shuts down the browser and cleans up.

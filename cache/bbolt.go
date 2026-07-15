@@ -3,6 +3,7 @@ package cache
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
@@ -28,10 +29,17 @@ func NewBBoltStoreReadOnly(path string) (*BBoltStore, error) {
 }
 
 func openBBolt(path string, readOnly bool) (*BBoltStore, error) {
+	if err := tightenDBPermissions(path); err != nil {
+		return nil, err
+	}
 	opts := &bolt.Options{Timeout: 1 * time.Second, ReadOnly: readOnly}
-	db, err := bolt.Open(path, 0o644, opts)
+	db, err := bolt.Open(path, 0o600, opts)
 	if err != nil {
 		return nil, fmt.Errorf("open cache db: %w", err)
+	}
+	if err := tightenDBPermissions(path); err != nil {
+		_ = db.Close()
+		return nil, err
 	}
 	if !readOnly {
 		err = db.Update(func(tx *bolt.Tx) error {
@@ -44,6 +52,20 @@ func openBBolt(path string, readOnly bool) (*BBoltStore, error) {
 		}
 	}
 	return &BBoltStore{db: db, path: path}, nil
+}
+
+// tightenDBPermissions protects both newly-created and pre-existing cache
+// databases. It is deliberately enforced on read-only opens too: a cache may
+// contain authenticated page content even when the current command only
+// inspects statistics.
+func tightenDBPermissions(path string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	if err := os.Chmod(path, 0o600); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("secure cache db permissions: %w", err)
+	}
+	return nil
 }
 
 func (s *BBoltStore) Get(key string) ([]byte, error) {

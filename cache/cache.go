@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/1broseidon/ketch/config"
@@ -92,10 +93,20 @@ func DBPath() (string, error) {
 		return "", err
 	}
 	dir := filepath.Join(base, "ketch")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := ensurePrivateDir(dir); err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, "cache.db"), nil
+}
+
+func ensurePrivateDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	return os.Chmod(dir, 0o700)
 }
 
 // Get looks up a cached page by URL. Returns (nil, "") if missing or expired.

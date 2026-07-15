@@ -20,6 +20,7 @@ ketch search <query> [flags]
 | `--trim` | `false` | Strip markdown formatting, keep text |
 | `--max-chars` | `0` | Truncate markdown to N chars (0 = off) |
 | `--searxng-url` | `http://localhost:8081` | SearXNG instance URL |
+| `--cookie-file` | config `cookie_file` or off | Netscape `cookies.txt` jar for `--scrape` fetches; an explicit empty value disables configured cookies |
 
 The global `--json` flag also applies.
 
@@ -144,8 +145,9 @@ Explicit args take priority over stdin, so `ketch scrape url < file` uses the UR
 | `--no-llms-txt` | `false` | Disable `/llms.txt` detection for bare domains |
 | `--force-browser` | `false` | Always render via the configured browser, skipping JS-shell auto-detection. Errors if no browser is configured. Composes with `--raw` (dump rendered HTML) and `--select` (run the selector against the rendered DOM); skips `/llms.txt` |
 | `--no-cache` | `false` | Bypass the page cache |
+| `--cookie-file` | config `cookie_file` or off | Netscape `cookies.txt` jar; an explicit empty value disables configured cookies |
 
-If a browser is configured and the page is detected as JS-rendered, ketch automatically re-fetches via headless Chrome.
+If a browser is configured and the page is detected as JS-rendered, ketch automatically re-fetches via headless Chrome. Matching cookies apply to the HTTP, `/llms.txt`, and browser paths and are re-scoped on every HTTP redirect.
 
 **Examples:**
 
@@ -154,6 +156,7 @@ ketch scrape https://go.dev/doc/effective_go
 ketch scrape https://example.com https://go.dev
 ketch scrape https://example.com --json
 ketch scrape https://example.com --no-cache
+ketch scrape https://example.com/private --cookie-file ~/cookies.txt
 ```
 
 Multiple URLs are scraped concurrently.
@@ -213,6 +216,7 @@ ketch crawl <url> [flags]
 | `--no-cache` | `false` | Bypass the page cache |
 | `--allow` | — | Path substring filters (any match passes) |
 | `--deny` | — | Regex deny patterns |
+| `--cookie-file` | config `cookie_file` or off | Netscape `cookies.txt` jar for page, sitemap, and nested sitemap-index fetches; an explicit empty value disables configured cookies |
 
 **Examples:**
 
@@ -220,8 +224,8 @@ ketch crawl <url> [flags]
 # BFS crawl, depth 2
 ketch crawl https://docs.example.com --depth 2
 
-# Sitemap crawl with high concurrency
-ketch crawl https://example.com/sitemap.xml --sitemap --concurrency 20
+# Authenticated sitemap crawl with high concurrency
+ketch crawl https://example.com/sitemap.xml --sitemap --concurrency 20 --cookie-file ~/cookies.txt
 
 # Background crawl
 ketch crawl https://example.com/sitemap.xml --sitemap --background
@@ -238,7 +242,7 @@ ketch crawl status <id>         # show progress for a specific crawl
 ketch crawl stop <id>           # stop a running background crawl
 ```
 
-Re-running a crawl uses cached pages. Use `--no-cache` to force re-fetch.
+Re-running a crawl uses cached pages. A configured jar with live cookies uses a jar-specific cache namespace, but authenticated content is still stored locally; the cache directory/database are private (`0700`/`0600` on POSIX). Use `--no-cache` when authenticated content must not be stored.
 
 ## ketch browser
 

@@ -32,6 +32,15 @@ func init() {
 	crawlCmd.AddCommand(crawlStopCmd)
 }
 
+func validateBackgroundCrawl(cmd *cobra.Command) error {
+	scraper, err := newScraper(cmd)
+	if err != nil {
+		return err
+	}
+	scraper.Close()
+	return nil
+}
+
 func runCrawlBackground(args []string) error {
 	id := crawl.GenerateCrawlID()
 
@@ -60,6 +69,10 @@ func runCrawlBackground(args []string) error {
 	}
 	childCmd.Stdin = devNull
 	childCmd.Stdout = devNull
+	// Cookie-file diagnostics are deliberately emitted by
+	// validateBackgroundCrawl in the parent before this detached worker starts.
+	// Keep worker output detached so the background process cannot retain the
+	// invoking terminal or pipe indefinitely.
 	childCmd.Stderr = devNull
 
 	if err := childCmd.Start(); err != nil {
@@ -105,8 +118,11 @@ func runCrawlWorker(cmd *cobra.Command, args []string, crawlID string) error {
 	pc := newCrawlCache(noCache)
 	defer pc.Close()
 
-	scraper, err := newScraper()
+	scraper, err := newScraper(cmd)
 	if err != nil {
+		status.Status = "failed"
+		status.Error = err.Error()
+		_ = crawl.WriteStatus(status)
 		return err
 	}
 	defer scraper.Close()

@@ -29,6 +29,7 @@ mcp/                         MCP server (search/code/docs/scrape/crawl tools) ov
 scrape/                      HTTP fetch + Page type, JS detection fallback, Rod browser; pipeline.go has the cache-aware scrape pipeline (CachedScrape*, ScrapeSelector, FetchLLMSTxt) shared by cmd/ and mcp/
 extract/                     readability + html-to-markdown pipeline, JS shell detection (Detector: built-in + config spa_markers, modern hydration/streaming frameworks)
 crawl/                       BFS crawler, work queue + worker pool, background status
+cookies/                     Netscape cookies.txt jar loader + RFC 6265 domain/path matching (Jar.For); nil-safe, values never logged
 config/                      JSON config loading/saving (~/.config/ketch/)
 doctor/                      Health checks: concurrent read-only probes per backend + browser + cache, status classification (ok/no_key/unreachable/misconfigured/skipped)
 cache/                       TTL page cache (Store interface, BBoltStore backend)
@@ -140,3 +141,4 @@ ketch mcp serve                             # run as an MCP server over stdio (s
 | --no-llms-txt | scrape | false | Disable automatic /llms.txt detection for bare domains |
 | --concurrency | scrape | 5 | Max concurrent requests for multi-URL scraping |
 | --force-browser | scrape | false | Always render via the configured browser, skipping JS-shell auto-detection (composes with --raw/--select; errors without a browser) |
+| --cookie-file <path> | scrape, search --scrape, crawl | config `cookie_file` or off | Netscape cookies.txt jar; flag overrides config and an explicit empty value disables cookies |

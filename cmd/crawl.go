@@ -32,6 +32,7 @@ func init() {
 	crawlCmd.Flags().Bool("sitemap", false, "treat seed URL as sitemap")
 	crawlCmd.Flags().Bool("no-cache", false, "bypass the page cache")
 	crawlCmd.Flags().Bool("background", false, "run crawl in background, return immediately with crawl ID")
+	crawlCmd.Flags().String("cookie-file", "", "Netscape cookies.txt jar; matching cookies are sent with each fetch (overrides config cookie_file)")
 }
 
 func runCrawl(cmd *cobra.Command, args []string) error {
@@ -43,6 +44,12 @@ func runCrawl(cmd *cobra.Command, args []string) error {
 	// Background launch mode
 	background, _ := cmd.Flags().GetBool("background")
 	if background {
+		// Validate cookie_file (and emit its permission warning) in the parent
+		// before status creation and process detachment. The worker loads it
+		// again, but an invalid jar now fails synchronously and visibly.
+		if err := validateBackgroundCrawl(cmd); err != nil {
+			return err
+		}
 		return runCrawlBackground(args)
 	}
 
@@ -58,7 +65,7 @@ func runCrawl(cmd *cobra.Command, args []string) error {
 	pc := newCrawlCache(noCache)
 	defer pc.Close()
 
-	scraper, err := newScraper()
+	scraper, err := newScraper(cmd)
 	if err != nil {
 		return err
 	}

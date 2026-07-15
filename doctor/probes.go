@@ -12,10 +12,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
 	"github.com/1broseidon/ketch/cache"
+	"github.com/1broseidon/ketch/cookies"
 	"github.com/1broseidon/ketch/scrape"
 )
 
@@ -425,6 +427,31 @@ func checkBrowser(configured string) (Status, string) {
 		return StatusMisconfigured, err.Error()
 	}
 	return StatusOK, bin
+}
+
+// checkCookieFile loads the configured jar and reports counts only — cookie
+// names and values never appear in doctor output.
+func checkCookieFile(path string) (Status, string) {
+	if path == "" {
+		return StatusSkipped, "not configured (cookie injection disabled; optional)"
+	}
+	jar, err := cookies.Load(path)
+	if err != nil {
+		return StatusMisconfigured, fmt.Sprintf("cannot load cookie file: %v (fix the path or re-export cookies.txt)", err)
+	}
+	detail := fmt.Sprintf("configured (%d cookies, %d expired)", jar.Len(), jar.Expired)
+	if cookiePermsLoose(path) {
+		detail += "; file is group/world-readable — chmod 600"
+	}
+	return StatusOK, detail
+}
+
+func cookiePermsLoose(path string) bool {
+	if runtime.GOOS == "windows" {
+		return false
+	}
+	info, err := os.Stat(cookies.ExpandPath(path))
+	return err == nil && info.Mode().Perm()&0o044 != 0
 }
 
 // checkCache verifies the cache directory is writable and reports entry

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -193,6 +194,65 @@ func TestApplyConfigSetURLRewritesEmptyClears(t *testing.T) {
 	}
 	if len(c.URLRewrites) != 0 {
 		t.Errorf("want empty list after [] reset, got %d rules", len(c.URLRewrites))
+	}
+}
+
+func TestApplyConfigSetCookieFile(t *testing.T) {
+	jar := filepath.Join(t.TempDir(), "cookies.txt")
+	if err := os.WriteFile(jar, []byte("example.com\tTRUE\t/\tFALSE\t0\tsid\tv\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("valid jar sets field", func(t *testing.T) {
+		c := config.Defaults()
+		if err := applyConfigSet(&c, "cookie_file", jar); err != nil {
+			t.Fatalf("unexpected err: %v", err)
+		}
+		if c.CookieFile != jar {
+			t.Fatalf("CookieFile = %q, want %q", c.CookieFile, jar)
+		}
+	})
+
+	t.Run("bad path is a validation error", func(t *testing.T) {
+		c := config.Defaults()
+		err := applyConfigSet(&c, "cookie_file", "/nonexistent/jar.txt")
+		if err == nil {
+			t.Fatal("expected validation error")
+		}
+		var exitErr *ExitError
+		if !errors.As(err, &exitErr) || exitErr.Code != ExitValidation {
+			t.Fatalf("error = %v, want exit %d", err, ExitValidation)
+		}
+		if c.CookieFile != "" {
+			t.Fatalf("bad path changed config to %q", c.CookieFile)
+		}
+	})
+
+	t.Run("empty clears", func(t *testing.T) {
+		c := config.Defaults()
+		c.CookieFile = jar
+		if err := applyConfigSet(&c, "cookie_file", ""); err != nil {
+			t.Fatalf("unexpected err: %v", err)
+		}
+		if c.CookieFile != "" {
+			t.Fatalf("CookieFile = %q, want empty", c.CookieFile)
+		}
+	})
+}
+
+func TestBuildConfigInfoShowsCookieFilePathNoValues(t *testing.T) {
+	c := config.Defaults()
+	c.CookieFile = "/home/user/cookies.txt"
+	info := buildConfigInfo(c, "/tmp/config.json")
+	if info.CookieFile != c.CookieFile {
+		t.Fatalf("CookieFile = %q, want %q", info.CookieFile, c.CookieFile)
+	}
+	data, err := json.Marshal(info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "cookie_file") {
+		t.Fatal("discovery payload should carry the cookie_file path")
 	}
 }
 

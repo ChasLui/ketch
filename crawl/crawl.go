@@ -4,15 +4,12 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"sync"
 
 	"github.com/1broseidon/ketch/cache"
-	"github.com/1broseidon/ketch/httpx"
 	"github.com/1broseidon/ketch/scrape"
 	"github.com/PuerkitoBio/goquery"
 )
@@ -127,7 +124,7 @@ func (c *crawler) run(seed string, sitemap bool) error {
 	}
 
 	if sitemap {
-		urls, sErr := fetchSitemap(c.ctx, seed)
+		urls, sErr := fetchSitemap(c.ctx, c.scraper, seed)
 		if sErr != nil {
 			close(c.work)
 			workerWg.Wait()
@@ -193,8 +190,10 @@ func (c *crawler) tryVisit(u string) bool {
 
 func (c *crawler) processItem(item queueItem) {
 	// item.url was already passed through Scraper.Rewrite in enqueue, so it
-	// is the canonical cache key — no second rewrite needed here.
-	cached, cachedSource := c.pc.Get(item.url)
+	// is the canonical fetch URL. The cache key folds in any matching cookies
+	// so cookie-bearing fetches don't collide with anonymous cached copies.
+	cacheKey := c.scraper.CacheKey(item.url)
+	cached, cachedSource := c.pc.Get(cacheKey)
 
 	// Cache hit: use cached page, skip fetch entirely, unless the entry
 	// is an unrendered JS-shell extraction and a browser is now available.
@@ -250,7 +249,7 @@ func (c *crawler) processItem(item queueItem) {
 		return
 	}
 
-	c.pc.Put(item.url, page, fetchSource)
+	c.pc.Put(cacheKey, page, fetchSource)
 	c.fn(Result{
 		Page:   page,
 		Depth:  item.depth,
@@ -435,15 +434,15 @@ type urlLoc struct {
 
 // fetchSitemap fetches a sitemap URL and returns all page URLs.
 // Supports both sitemap index files and regular sitemaps.
-func fetchSitemap(ctx context.Context, sitemapURL string) ([]string, error) {
-	body, err := fetchBody(ctx, sitemapURL)
+func fetchSitemap(ctx context.Context, scraper *scrape.Scraper, sitemapURL string) ([]string, error) {
+	body, err := fetchBody(ctx, scraper, sitemapURL)
 	if err != nil {
 		return nil, err
 	}
 
 	var idx sitemapIndex
 	if xml.Unmarshal(body, &idx) == nil && len(idx.Sitemaps) > 0 {
-		return fetchSitemapIndex(ctx, idx)
+		return fetchSitemapIndex(ctx, scraper, idx)
 	}
 
 	var us urlSet
@@ -460,10 +459,10 @@ func fetchSitemap(ctx context.Context, sitemapURL string) ([]string, error) {
 	return urls, nil
 }
 
-func fetchSitemapIndex(ctx context.Context, idx sitemapIndex) ([]string, error) {
+func fetchSitemapIndex(ctx context.Context, scraper *scrape.Scraper, idx sitemapIndex) ([]string, error) {
 	var all []string
 	for _, sm := range idx.Sitemaps {
-		urls, err := fetchSitemap(ctx, sm.Loc)
+		urls, err := fetchSitemap(ctx, scraper, sm.Loc)
 		if err != nil {
 			continue
 		}
@@ -472,18 +471,10 @@ func fetchSitemapIndex(ctx context.Context, idx sitemapIndex) ([]string, error) 
 	return all, nil
 }
 
-func fetchBody(ctx context.Context, rawURL string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
+func fetchBody(ctx context.Context, scraper *scrape.Scraper, rawURL string) ([]byte, error) {
+	content, err := scraper.FetchContent(ctx, rawURL)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := httpx.Default().Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d for %s", resp.StatusCode, rawURL)
-	}
-	return io.ReadAll(io.LimitReader(resp.Body, scrape.MaxBodyBytes))
+	return content.Body, nil
 }

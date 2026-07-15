@@ -44,6 +44,7 @@ func init() {
 	searchCmd.Flags().String("random", "",
 		"random provider with fallback: comma-separated list, or bare/=all for every usable backend (use the = form, e.g. --random=brave,exa)")
 	searchCmd.Flags().Lookup("random").NoOptDefVal = "all"
+	searchCmd.Flags().String("cookie-file", "", "Netscape cookies.txt jar for --scrape fetches; matching cookies are sent with each fetch (overrides config cookie_file)")
 }
 
 func runSearch(cmd *cobra.Command, args []string) error {
@@ -77,7 +78,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	if doScrape {
-		scraper, err := newScraper()
+		scraper, err := newScraper(cmd)
 		if err != nil {
 			return err
 		}
@@ -242,7 +243,7 @@ func runMultiSearch(cmd *cobra.Command, query string, limit int, doScrape, asJSO
 	}
 
 	if doScrape {
-		scraper, err := newScraper()
+		scraper, err := newScraper(cmd)
 		if err != nil {
 			return err
 		}
@@ -289,7 +290,7 @@ func runRandomSearch(cmd *cobra.Command, query string, limit int, doScrape, asJS
 	}
 
 	if doScrape {
-		scraper, err := newScraper()
+		scraper, err := newScraper(cmd)
 		if err != nil {
 			return err
 		}

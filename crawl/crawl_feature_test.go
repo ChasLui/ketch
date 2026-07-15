@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/1broseidon/ketch/config"
 	"github.com/1broseidon/ketch/scrape"
 )
 
@@ -199,7 +201,9 @@ func TestFeatureSitemapXMLParsing(t *testing.T) {
 	}))
 	defer server.Close()
 
-	urls, err := fetchSitemap(context.Background(), server.URL)
+	s := scrape.New()
+	defer s.Close()
+	urls, err := fetchSitemap(context.Background(), s, server.URL)
 	if err != nil {
 		t.Fatalf("fetchSitemap error: %v", err)
 	}
@@ -248,7 +252,9 @@ func TestFeatureSitemapIndexParsing(t *testing.T) {
 		w.Write(data)
 	})
 
-	urls, err := fetchSitemap(context.Background(), server.URL+"/sitemap.xml")
+	s := scrape.New()
+	defer s.Close()
+	urls, err := fetchSitemap(context.Background(), s, server.URL+"/sitemap.xml")
 	if err != nil {
 		t.Fatalf("fetchSitemap error: %v", err)
 	}
@@ -257,6 +263,54 @@ func TestFeatureSitemapIndexParsing(t *testing.T) {
 	}
 	if urls[0] != "https://example.com/from-index" {
 		t.Errorf("url = %q, want %q", urls[0], "https://example.com/from-index")
+	}
+}
+
+func TestAuthenticatedSitemapAndNestedIndex(t *testing.T) {
+	const wantCookie = "session=secret"
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	mux.HandleFunc("/sitemap.xml", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Cookie") != wantCookie {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		idx := sitemapIndex{
+			XMLName:  xml.Name{Local: "sitemapindex"},
+			Sitemaps: []sitemapLoc{{Loc: server.URL + "/nested.xml"}},
+		}
+		_ = xml.NewEncoder(w).Encode(idx)
+	})
+	mux.HandleFunc("/nested.xml", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Cookie") != wantCookie {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		us := urlSet{
+			XMLName: xml.Name{Local: "urlset"},
+			URLs:    []urlLoc{{Loc: server.URL + "/private"}},
+		}
+		_ = xml.NewEncoder(w).Encode(us)
+	})
+
+	jarPath := filepath.Join(t.TempDir(), "cookies.txt")
+	if err := os.WriteFile(jarPath, []byte("127.0.0.1\tFALSE\t/\tFALSE\t0\tsession\tsecret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := scrape.NewFromConfig(&config.Config{CookieFile: jarPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	urls, err := fetchSitemap(context.Background(), s, server.URL+"/sitemap.xml")
+	if err != nil {
+		t.Fatalf("fetchSitemap: %v", err)
+	}
+	if len(urls) != 1 || urls[0] != server.URL+"/private" {
+		t.Fatalf("urls = %v, want authenticated nested sitemap URL", urls)
 	}
 }
 

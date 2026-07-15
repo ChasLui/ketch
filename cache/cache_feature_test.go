@@ -3,6 +3,7 @@ package cache
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -199,6 +200,71 @@ func TestFeatureGetMissingKey(t *testing.T) {
 	got, _ := c.Get("https://example.com/nonexistent")
 	if got != nil {
 		t.Error("expected nil for missing key")
+	}
+}
+
+func TestCachePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not meaningful on Windows")
+	}
+
+	t.Run("new database is private", testNewDatabasePermissions)
+	t.Run("existing database is tightened on open", testExistingDatabasePermissions)
+	t.Run("cache directory is private", testCacheDirectoryPermissions)
+}
+
+func testNewDatabasePermissions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cache.db")
+	store, err := NewBBoltStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	assertMode(t, path, 0o600)
+}
+
+func testExistingDatabasePermissions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cache.db")
+	store, err := NewBBoltStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store, err = NewBBoltStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	assertMode(t, path, 0o600)
+}
+
+func testCacheDirectoryPermissions(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "ketch")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensurePrivateDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	assertMode(t, dir, 0o700)
+}
+
+func assertMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("mode = %o, want %o", got, want)
 	}
 }
 

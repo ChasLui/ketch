@@ -165,7 +165,27 @@ ketch config                               # print effective config + available 
 ketch config path                          # print the config file path
 ```
 
-Other configurable keys include per-backend API keys and URLs (`brave_api_key`, `context7_api_key`, `github_token`, `sourcegraph_url`, `exa_api_key`, `firecrawl_api_key`), `cache_ttl`, `url_rewrites` (regex rewrite rules applied before fetch), `spa_markers` (extra JS-shell detection tokens), and the optional external PDF converter command/timeout. See the [config reference](https://1broseidon.github.io/ketch/) for the full list.
+Other configurable keys include per-backend API keys and URLs (`brave_api_key`, `context7_api_key`, `github_token`, `sourcegraph_url`, `exa_api_key`, `firecrawl_api_key`), `cache_ttl`, `url_rewrites` (regex rewrite rules applied before fetch), `spa_markers` (extra JS-shell detection tokens), `cookie_file` (see below), and the optional external PDF converter command/timeout. See the [config reference](https://1broseidon.github.io/ketch/) for the full list.
+
+### Cookies (BYO cookies.txt)
+
+Some pages only render their real content once a session or consent cookie is present — a logged-in dashboard, or a consent-banner wall (e.g. Nvidia NGC docs) that shows only the banner to an anonymous headless browser. ketch can attach your own cookies to every fetch, on both the HTTP and browser paths.
+
+Supply a jar in the **Netscape `cookies.txt` format** — the same format exported by browser "cookies.txt" extensions and consumed by `curl` and `yt-dlp`:
+
+```sh
+ketch scrape https://catalog.ngc.nvidia.com/... --cookie-file ~/cookies.txt
+ketch search "query" --scrape --cookie-file ~/cookies.txt
+ketch crawl https://internal.example.com --cookie-file ~/cookies.txt
+ketch config set cookie_file ~/cookies.txt          # persist as a default
+```
+
+- The `--cookie-file` flag overrides the `cookie_file` config value; an explicit empty flag (`--cookie-file ""`) disables cookies for that run.
+- Only cookies whose Domain, HostOnly, Path, and Secure scope matches the request URL are sent; scope is re-evaluated on every redirect, and expired entries are rechecked before every request.
+- Cookie **values are never printed** — not in output frontmatter, `--json`, errors, or `ketch doctor`. `ketch doctor` reports `configured (N cookies, M expired)` and nothing more. Keep the jar at `chmod 600`; ketch warns on stderr if it is group/world-readable.
+- A configured jar uses a jar-specific page-cache namespace, including before redirects, so authenticated content cannot collide with anonymous cached copies. Authenticated content is still cached locally: on POSIX, ketch protects the cache directory/database as `0700`/`0600`; use `--no-cache` if it must not be stored.
+
+**Responsibility:** respecting a site's Terms of Service and using only your own session cookies is entirely the operator's responsibility.
 
 ## Agent integration
 

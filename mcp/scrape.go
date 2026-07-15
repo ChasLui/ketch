@@ -118,7 +118,7 @@ func (s *Server) scrapeOne(ctx context.Context, rawURL string, in ScrapeInput) (
 	// llms.txt auto-detection for bare domains. Skipped under force_browser:
 	// the caller explicitly wants the rendered page, not an /llms.txt shortcut.
 	if !in.NoLLMSTxt && !in.ForceBrowser {
-		if content, ok := scrape.FetchLLMSTxt(ctx, rawURL); ok {
+		if content, ok := s.scraper.FetchLLMSTxt(ctx, rawURL); ok {
 			page := scrape.Page{URL: rawURL, Title: "llms.txt", Markdown: extract.PostProcess(content, in.Trim, in.MaxChars)}
 			return ScrapeResult{Page: page}, nil
 		}

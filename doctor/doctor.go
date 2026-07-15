@@ -110,6 +110,7 @@ func buildSpecs(cfg *config.Config, client *http.Client) []spec {
 	searxngURL := cfg.SearxngURL
 	sourcegraphURL := cfg.SourcegraphURL
 	browser := cfg.Browser
+	cookieFile := cfg.CookieFile
 	resolveGithub := cfg.ResolveGithubToken
 
 	return []spec{
@@ -153,6 +154,9 @@ func buildSpecs(cfg *config.Config, client *http.Client) []spec {
 		}},
 		{"browser", browserBackendName(browser), browser != "", func(_ context.Context) (Status, string) {
 			return checkBrowser(browser)
+		}},
+		{"cookies", "jar", cookieFile != "", func(_ context.Context) (Status, string) {
+			return checkCookieFile(cookieFile)
 		}},
 		{"cache", "bbolt", true, func(_ context.Context) (Status, string) {
 			return checkCache()

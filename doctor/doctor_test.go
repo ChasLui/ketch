@@ -3,13 +3,16 @@ package doctor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/1broseidon/ketch/config"
 )
@@ -442,6 +445,68 @@ func TestCheckBrowser(t *testing.T) {
 		}
 		if detail != bin {
 			t.Errorf("detail = %q, want resolved path %q", detail, bin)
+		}
+	})
+}
+
+// --- cookies ---
+
+func writeCookieJar(t *testing.T, mode os.FileMode, lines ...string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "cookies.txt")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), mode); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, mode); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestCheckCookieFile(t *testing.T) {
+	future := time.Now().Add(24 * time.Hour).Unix()
+	past := time.Now().Add(-24 * time.Hour).Unix()
+	live := func(name string) string {
+		return fmt.Sprintf("example.com\tTRUE\t/\tFALSE\t%d\t%s\tsecretval", future, name)
+	}
+	expired := fmt.Sprintf("example.com\tTRUE\t/\tFALSE\t%d\told\tsecretval", past)
+
+	t.Run("unconfigured is a clean skip", func(t *testing.T) {
+		status, _ := checkCookieFile("")
+		if status != StatusSkipped {
+			t.Fatalf("status = %q, want skipped", status)
+		}
+	})
+
+	t.Run("valid jar reports counts", func(t *testing.T) {
+		jar := writeCookieJar(t, 0o600, live("a"), live("b"), expired)
+		status, detail := checkCookieFile(jar)
+		if status != StatusOK {
+			t.Fatalf("status = %q (detail %q), want ok", status, detail)
+		}
+		if detail != "configured (2 cookies, 1 expired)" {
+			t.Fatalf("detail = %q", detail)
+		}
+		if strings.Contains(detail, "secretval") {
+			t.Fatal("detail leaked a cookie value")
+		}
+	})
+
+	t.Run("loose perms warn in detail", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("POSIX perms not meaningful on Windows")
+		}
+		jar := writeCookieJar(t, 0o644, live("a"))
+		_, detail := checkCookieFile(jar)
+		if !strings.Contains(detail, "group/world-readable") {
+			t.Fatalf("detail = %q, want chmod hint", detail)
+		}
+	})
+
+	t.Run("missing path is misconfigured", func(t *testing.T) {
+		status, _ := checkCookieFile("/nonexistent/jar.txt")
+		if status != StatusMisconfigured {
+			t.Fatalf("status = %q, want misconfigured", status)
 		}
 	})
 }

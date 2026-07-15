@@ -44,6 +44,7 @@ Default output uses YAML frontmatter + markdown (cymbal style):
 | `--no-llms-txt` | scrape | false | Disable automatic /llms.txt detection for bare domains |
 | `--raw` | scrape | false | Output raw HTML instead of markdown (skips `/llms.txt`; incompatible with `--select`/`--trim`) |
 | `--force-browser` | scrape | false | Always render via the configured browser, skipping JS-shell auto-detection (errors without a browser); composes with `--raw` and `--select` |
+| `--cookie-file <path>` | scrape, search --scrape, crawl | off (config `cookie_file`) | Netscape cookies.txt jar; matching cookies attached at both fetch layers. Overrides `cookie_file`; empty value disables. Values never printed |
 
 ### Multi-URL Scraping
 ketch scrape detects input mode automatically — no flags needed:
@@ -148,6 +149,25 @@ ketch config set spa_markers '[]'
 ```
 
 Stored at `~/.config/ketch/config.json` under `spa_markers`. Blank markers are rejected (a `""` would match every page). Markers feed the same detector path as the built-ins, including the content-is-client-rendered override. View with `ketch config`.
+
+### Cookies
+
+BYO cookies for session/consent-gated pages (issue #25). ketch loads a **Netscape `cookies.txt`** jar (browser-extension / curl / yt-dlp format) and attaches matching cookies at **both** fetch layers — the HTTP path (`scrape/scrape.go`) and the Rod browser path (`scrape/browser.go`, cookies set before navigation, which is what fixes consent-banner walls like Nvidia NGC docs).
+
+```bash
+# Per-invocation flag (scrape, search --scrape, crawl):
+ketch scrape <url> --cookie-file ~/cookies.txt
+
+# Persistent config key; flag overrides it (empty flag disables for the run):
+ketch config set cookie_file ~/cookies.txt
+```
+
+- Matching enforces Domain, HostOnly, Path, and Secure scope against every request and redirect. Malformed scope fields are rejected, and expiry is rechecked per request; the `#HttpOnly_` line prefix is honored.
+- The `cookies/` package (`cookies.Load`/`Parse`/`Jar.For`) owns parsing and matching; `Jar` methods are nil-safe so scrapers built without a jar behave exactly as before.
+- **Cache keys**: a short jar fingerprint is folded into `Scraper.CacheKey` whenever the configured jar has live cookies. The namespace is isolated even when the initial URL has no match, because a redirect may land in cookie scope. Crawl uses the same key. Authenticated content is still stored locally; POSIX cache directory/database modes are `0700`/`0600`, and `--no-cache` prevents storage.
+- **Hygiene**: cookie values are never printed anywhere (frontmatter, `--json`, errors, `ketch doctor`). `ketch doctor` reports `cookies/jar: configured (N cookies, M expired)`. A group/world-readable jar triggers a one-time stderr warning (`chmod 600` recommended). Respecting site ToS and using only your own cookies is the operator's responsibility.
+
+Stored at `~/.config/ketch/config.json` under `cookie_file`. View with `ketch config` (path only, never values).
 
 ### Page Cache
 

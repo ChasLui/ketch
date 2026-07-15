@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/1broseidon/ketch/config"
+	"github.com/1broseidon/ketch/cookies"
 	"github.com/1broseidon/ketch/extract"
 	"github.com/1broseidon/ketch/urlrewrite"
 	"github.com/spf13/cobra"
@@ -34,6 +35,7 @@ type configInfo struct {
 	Limit                              int               `json:"limit"`
 	CacheTTL                           string            `json:"cache_ttl"`
 	Browser                            string            `json:"browser,omitempty"`
+	CookieFile                         string            `json:"cookie_file,omitempty"`
 	CodeBackend                        string            `json:"code_backend"`
 	DocsBackend                        string            `json:"docs_backend"`
 	Context7APIKeySet                  bool              `json:"context7_api_key_set"`
@@ -113,6 +115,7 @@ func buildConfigInfo(c config.Config, path string) configInfo {
 		Limit:                              c.Limit,
 		CacheTTL:                           c.CacheTTL,
 		Browser:                            c.Browser,
+		CookieFile:                         c.CookieFile,
 		CodeBackend:                        c.CodeBackend,
 		DocsBackend:                        c.DocsBackend,
 		Context7APIKeySet:                  c.Context7APIKey != "",
@@ -247,12 +250,14 @@ func applyConfigSet(c *config.Config, key, value string) error {
 		return setURLRewrites(c, value)
 	case "spa_markers":
 		return setSPAMarkers(c, value)
+	case "cookie_file":
+		return setCookieFile(c, value)
 	case "external_pdf_to_md_converter_command":
 		return setExternalPDFConverterCommand(c, value)
 	case "external_pdf_to_md_converter_timeout_sec":
 		return setExternalPDFConverterTimeout(c, value)
 	default:
-		return exitErrf(ExitValidation, "unknown key: %s (valid: backend, searxng_url, brave_api_key, brave_api_keys, exa_api_key, exa_api_keys, firecrawl_api_key, firecrawl_api_keys, keenable_api_key, keenable_api_keys, limit, cache_ttl, browser, code_backend, docs_backend, context7_api_key, sourcegraph_url, github_token, url_rewrites, spa_markers, external_pdf_to_md_converter_command, external_pdf_to_md_converter_timeout_sec)", key)
+		return exitErrf(ExitValidation, "unknown key: %s (valid: backend, searxng_url, brave_api_key, brave_api_keys, exa_api_key, exa_api_keys, firecrawl_api_key, firecrawl_api_keys, keenable_api_key, keenable_api_keys, limit, cache_ttl, browser, code_backend, docs_backend, context7_api_key, sourcegraph_url, github_token, url_rewrites, spa_markers, cookie_file, external_pdf_to_md_converter_command, external_pdf_to_md_converter_timeout_sec)", key)
 	}
 	return nil
 }
@@ -304,6 +309,19 @@ func setExternalPDFConverterTimeout(c *config.Config, value string) error {
 		return exitErrf(ExitValidation, "external_pdf_to_md_converter_timeout_sec must be a positive integer")
 	}
 	c.ExternalPDFToMDConverterTimeoutSec = n
+	return nil
+}
+
+// setCookieFile validates the jar parses before persisting. Empty clears it.
+func setCookieFile(c *config.Config, value string) error {
+	if value == "" {
+		c.CookieFile = ""
+		return nil
+	}
+	if _, err := cookies.Load(value); err != nil {
+		return exitErrf(ExitValidation, "invalid cookie_file: %w", err)
+	}
+	c.CookieFile = value
 	return nil
 }
 

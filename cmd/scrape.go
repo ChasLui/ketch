@@ -41,6 +41,7 @@ func init() {
 	scrapeCmd.Flags().Bool("no-llms-txt", false, "disable automatic /llms.txt detection for bare domains")
 	scrapeCmd.Flags().Int("concurrency", 5, "max concurrent requests for multi-URL scraping")
 	scrapeCmd.Flags().Bool("force-browser", false, "always render via the configured browser, skipping JS-shell auto-detection")
+	scrapeCmd.Flags().String("cookie-file", "", "Netscape cookies.txt jar; matching cookies are sent with each fetch (overrides config cookie_file)")
 }
 
 func runScrape(cmd *cobra.Command, args []string) error {
@@ -70,7 +71,7 @@ func runScrape(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	scraper, err := newScraper()
+	scraper, err := newScraper(cmd)
 	if err != nil {
 		return err
 	}
@@ -163,11 +164,17 @@ func readLinesFromFile(path string) ([]string, error) {
 	return readLines(f), nil
 }
 
-// newScraper builds a Scraper from cfg via the shared scrape.NewFromConfig,
-// classifying construction failures as precondition errors. Returned scraper
-// must be Closed by the caller.
-func newScraper() (*scrape.Scraper, error) {
-	s, err := scrape.NewFromConfig(&cfg)
+// newScraper builds a Scraper from cfg, honoring a --cookie-file flag when the
+// invoking command defines one (flag overrides config; an explicit empty value
+// disables cookies for the run). Construction failures — including a bad jar
+// path — classify as precondition errors. Returned scraper must be Closed by
+// the caller.
+func newScraper(cmd *cobra.Command) (*scrape.Scraper, error) {
+	c := cfg // shallow copy; only CookieFile is overridden
+	if f := cmd.Flags().Lookup("cookie-file"); f != nil && f.Changed {
+		c.CookieFile = f.Value.String()
+	}
+	s, err := scrape.NewFromConfig(&c)
 	if err != nil {
 		return nil, &ExitError{Code: ExitPrecondition, Err: err}
 	}
@@ -204,7 +211,7 @@ func scrapeSingle(ctx context.Context, s *scrape.Scraper, pc *cache.Cache, rawUR
 	// llms.txt auto-detection for bare domains. Skipped under --force-browser:
 	// the caller explicitly wants the rendered page, not an /llms.txt shortcut.
 	if !noLLMSTxt && !forceBrowser {
-		if content, ok := scrape.FetchLLMSTxt(ctx, rawURL); ok {
+		if content, ok := s.FetchLLMSTxt(ctx, rawURL); ok {
 			page := &scrape.Page{URL: rawURL, Title: "llms.txt", Markdown: content}
 			page.Markdown = extract.PostProcess(page.Markdown, trim, maxChars)
 			if asJSON {
@@ -340,7 +347,7 @@ func scrapeOneURL(ctx context.Context, s *scrape.Scraper, pc *cache.Cache, rawUR
 		return page, rawHTML, source, err
 	}
 	if !noLLMSTxt && !forceBrowser {
-		if content, ok := scrape.FetchLLMSTxt(ctx, rawURL); ok {
+		if content, ok := s.FetchLLMSTxt(ctx, rawURL); ok {
 			return &scrape.Page{URL: rawURL, Title: "llms.txt", Markdown: content}, "", "", nil
 		}
 	}

@@ -38,11 +38,11 @@ The discovery payload:
 }
 ```
 
-`browser` is included only when set. The `*_set` booleans report key presence
-only — key values are never printed. `github_token_source` reports where the
+The `*_set` booleans report key presence only — key values are never printed.
+`github_token_source` reports where the
 GitHub token was resolved from (`config`, `env`, `gh-cli`, or `none`), and
 `github_token_set` is true whenever that chain resolved a token.
-`url_rewrites`, `spa_markers`, and `external_pdf_to_md_converter_command` appear only when configured. The external PDF converter timeout is always reported.
+`browser`, `cookie_file`, `url_rewrites`, `spa_markers`, and `external_pdf_to_md_converter_command` appear only when configured. `cookie_file` reports only the jar path, never cookie names or values. The external PDF converter timeout is always reported.
 
 ## Setting Values
 
@@ -56,6 +56,7 @@ ketch config set keenable_api_key keen_...
 ketch config set limit 10
 ketch config set cache_ttl 4h
 ketch config set browser chrome
+ketch config set cookie_file ~/cookies.txt
 ketch config set external_pdf_to_md_converter_command 'pdftotext "{input}" -'
 ketch config set external_pdf_to_md_converter_timeout_sec 300
 ketch config set code_backend sourcegraph
@@ -96,6 +97,7 @@ ketch config set github_token ghp_...
 | `browser` | — | Browser for JS-rendered pages: `chrome`, `chromium`, or absolute path |
 | `url_rewrites` | — | Ordered regex rewrite rules applied before every fetch (see below) |
 | `spa_markers` | — | Extra JS-shell detection substrings (JSON array); pages containing one are treated as JS-rendered and re-fetched via the browser |
+| `cookie_file` | — | Path to a Netscape `cookies.txt` jar used by `scrape`, `search --scrape`, `crawl`, and the MCP server |
 | `external_pdf_to_md_converter_command` | — | Optional shlex-parsed PDF-to-Markdown command; must contain exactly one `{input}` placeholder and write Markdown to stdout (capped at 10 MiB) |
 | `external_pdf_to_md_converter_timeout_sec` | `300` | Positive timeout in seconds for the external PDF converter |
 
@@ -105,6 +107,24 @@ PDFs do not support `--raw` or `--select`; these return validation errors (exit 
 
 Secrets (`brave_api_key`, `exa_api_key`, `firecrawl_api_key`, `keenable_api_key`, `context7_api_key`, `github_token`) are stored in
 plaintext in `config.json`; protect the file accordingly.
+
+## Cookies
+
+Set `cookie_file` to a Netscape `cookies.txt` export for pages that require your own session or consent cookies:
+
+```sh
+ketch config set cookie_file ~/cookies.txt
+
+# Override the configured jar for one command
+ketch scrape https://example.com/private --cookie-file /path/to/other-cookies.txt
+
+# Explicitly disable configured cookies for one command
+ketch crawl https://example.com --cookie-file ""
+```
+
+The `--cookie-file` flag is available on `scrape`, `search` (for `--scrape` fetches), and `crawl`; it overrides `cookie_file`. The configured jar also applies to MCP scrape and crawl calls. ketch rejects cookies with malformed domain, include-subdomain, path, or Secure fields. For every request and redirect, it re-matches Domain, HostOnly, Path, and Secure scope; Secure cookies are not sent on HTTPS-to-HTTP redirects. Matching cookies are also used for `/llms.txt`, sitemap, and nested sitemap-index fetches.
+
+Cookie values are never printed. Keep the jar private (`chmod 600`); ketch warns when it is group/world-readable on POSIX systems.
 
 ## URL Rewrites
 
@@ -142,7 +162,7 @@ When a browser is configured, ketch automatically detects JS-rendered pages (Rea
 
 ## Page Cache
 
-Scraped and crawled pages are cached in a single bbolt database at the platform cache directory:
+Scraped and crawled pages are cached in a single bbolt database at the platform cache directory. On POSIX systems, ketch creates the cache directory with mode `0700` and the database with mode `0600`, tightening an older database when it is opened.
 
 | OS | Path |
 |----|------|
@@ -163,3 +183,5 @@ ketch scrape https://example.com --no-cache
 # Bypass cache for a crawl (force re-fetch everything)
 ketch crawl https://example.com --no-cache
 ```
+
+When the configured jar has live cookies, ketch uses a jar-specific cache namespace even if only a redirect target matches cookie scope. Because the cache can contain private authenticated content, treat the entire cache directory as sensitive; use `--no-cache` when authenticated content must not be stored.

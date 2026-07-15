@@ -34,6 +34,7 @@ type Config struct {
 	GithubToken                        string            `json:"github_token,omitempty"`
 	URLRewrites                        []urlrewrite.Rule `json:"url_rewrites,omitempty"`
 	SPAMarkers                         []string          `json:"spa_markers,omitempty"`
+	CookieFile                         string            `json:"cookie_file,omitempty"` // Netscape cookies.txt path; empty = disabled
 	ExternalPDFToMDConverterCommand    string            `json:"external_pdf_to_md_converter_command,omitempty"`
 	ExternalPDFToMDConverterTimeoutSec int               `json:"external_pdf_to_md_converter_timeout_sec"`
 }

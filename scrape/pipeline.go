@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
+	"os"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/1broseidon/ketch/config"
+	"github.com/1broseidon/ketch/cookies"
 	"github.com/1broseidon/ketch/extract"
-	"github.com/1broseidon/ketch/httpx"
 	"github.com/1broseidon/ketch/urlrewrite"
 )
 
@@ -56,6 +56,15 @@ func NewFromConfig(cfg *config.Config) (*Scraper, error) {
 		return nil, fmt.Errorf("invalid url_rewrites: %w", err)
 	}
 	scraper := NewWithConfig(cfg.Browser, rw, cfg.SPAMarkers)
+	if cfg.CookieFile != "" {
+		jar, err := cookies.Load(cfg.CookieFile)
+		if err != nil {
+			return nil, fmt.Errorf("invalid cookie_file: %w", err)
+		}
+		scraper.jar = jar
+		scraper.client = clientWithCookies(scraper.client, jar)
+		warnLooseCookiePerms(cfg.CookieFile)
+	}
 	if cfg.ExternalPDFToMDConverterCommand != "" {
 		pdfExtractor, err := extract.NewExternalPDFExtractor(
 			cfg.ExternalPDFToMDConverterCommand,
@@ -69,6 +78,18 @@ func NewFromConfig(cfg *config.Config) (*Scraper, error) {
 	return scraper, nil
 }
 
+// warnLooseCookiePerms warns once (NewFromConfig runs once per process) when
+// the jar is group/world-readable. Skipped on Windows, where POSIX permission
+// bits are not meaningful.
+func warnLooseCookiePerms(path string) {
+	if runtime.GOOS == "windows" {
+		return
+	}
+	if info, err := os.Stat(cookies.ExpandPath(path)); err == nil && info.Mode().Perm()&0o044 != 0 {
+		fmt.Fprintf(os.Stderr, "warn: cookie file %s is group/world-readable; chmod 600 recommended\n", path)
+	}
+}
+
 // CachedScrape checks the cache first, falls back to fetch+extract.
 // Hits are bypassed when the entry was extracted from an unrendered JS shell
 // and a browser is now available to do better, or when the entry predates
@@ -76,7 +97,7 @@ func NewFromConfig(cfg *config.Config) (*Scraper, error) {
 // The cache is keyed by the rewritten URL so original and rewritten URLs
 // share one cache entry.
 func (s *Scraper) CachedScrape(ctx context.Context, pc PageCache, url string) (*Page, error) {
-	key := s.Rewrite(url)
+	key := s.CacheKey(s.Rewrite(url))
 	if pc != nil {
 		if page, source := pc.Get(key); page != nil && !CacheStaleForBrowser(source, s.HasBrowser()) {
 			return page, nil
@@ -102,7 +123,7 @@ func (s *Scraper) CachedScrape(ctx context.Context, pc PageCache, url string) (*
 // cached Page (one fetch, both representations cached). A nil pc skips cache
 // read/write and returns the fresh fetch result directly.
 func (s *Scraper) CachedScrapeRaw(ctx context.Context, pc PageCache, url string) (*Page, string, string, error) {
-	key := s.Rewrite(url)
+	key := s.CacheKey(s.Rewrite(url))
 	if pc != nil {
 		if rawHTML, source, page := pc.GetRaw(key); page != nil {
 			return page, rawHTML, source, nil
@@ -128,19 +149,20 @@ func (s *Scraper) CachedScrapeRaw(ctx context.Context, pc PageCache, url string)
 // viewer and use the configured PDF extractor. For HTML, a cache entry is
 // reused only when that entry is itself a browser render.
 func (s *Scraper) CachedScrapeForce(ctx context.Context, pc PageCache, url string) (*Page, error) {
-	key := s.Rewrite(url)
-	content, err := s.FetchContent(ctx, key)
+	fetchURL := s.Rewrite(url)
+	key := s.CacheKey(fetchURL)
+	content, err := s.FetchContent(ctx, fetchURL)
 	if err != nil {
 		return nil, err
 	}
 	if effectiveContentType(content.ContentType, content.Body) == "application/pdf" {
 		markdown, err := s.pdfExtractor.Extract(ctx, content.Body)
 		if err != nil {
-			return nil, fmt.Errorf("PDF extraction failed for %s: %w", key, err)
+			return nil, fmt.Errorf("PDF extraction failed for %s: %w", fetchURL, err)
 		}
 		page := &Page{URL: url, Markdown: markdown}
-		if key != url {
-			page.FetchedURL = key
+		if fetchURL != url {
+			page.FetchedURL = fetchURL
 		}
 		if pc != nil {
 			pc.Put(key, page, SourceHTTP)
@@ -169,8 +191,9 @@ func (s *Scraper) CachedScrapeForce(ctx context.Context, pc PageCache, url strin
 // response before consulting the browser cache or rendering, rejecting PDFs
 // rather than returning Chromium's PDF-viewer HTML.
 func (s *Scraper) CachedScrapeRawForce(ctx context.Context, pc PageCache, url string) (*Page, string, string, error) {
-	key := s.Rewrite(url)
-	content, err := s.FetchContent(ctx, key)
+	fetchURL := s.Rewrite(url)
+	key := s.CacheKey(fetchURL)
+	content, err := s.FetchContent(ctx, fetchURL)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -263,44 +286,28 @@ func (s *Scraper) fetchHTMLForSelector(ctx context.Context, rawURL, fetchURL str
 	return html, nil
 }
 
-// FetchLLMSTxt attempts to fetch /llms.txt from the given base URL. It only
-// probes bare domains (path empty or "/") and returns the content and true on
-// success. All errors are silently swallowed — this is a best-effort check.
+// FetchLLMSTxt attempts to fetch /llms.txt anonymously. It is kept for
+// package compatibility; callers with a Scraper should use its method so the
+// configured cookie jar and redirect re-scoping apply.
 func FetchLLMSTxt(ctx context.Context, baseURL string) (string, bool) {
+	return New().FetchLLMSTxt(ctx, baseURL)
+}
+
+// FetchLLMSTxt attempts to fetch /llms.txt from a bare-domain URL through the
+// scraper's authenticated HTTP path. All errors are swallowed because this is
+// only a best-effort shortcut before the requested page is scraped.
+func (s *Scraper) FetchLLMSTxt(ctx context.Context, baseURL string) (string, bool) {
 	u, err := url.Parse(baseURL)
-	if err != nil {
-		return "", false
-	}
-	if u.Path != "" && u.Path != "/" {
+	if err != nil || (u.Path != "" && u.Path != "/") {
 		return "", false
 	}
 
-	// Cap llms.txt probes at 5s — they're best-effort and shouldn't delay
-	// the real scrape if a host ignores the request.
+	// Cap probes at 5s so an unresponsive endpoint cannot delay the real scrape.
 	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	llmsURL := u.Scheme + "://" + u.Host + "/llms.txt"
-	req, err := http.NewRequestWithContext(probeCtx, "GET", llmsURL, nil)
-	if err != nil {
+	content, err := s.FetchContent(probeCtx, u.Scheme+"://"+u.Host+"/llms.txt")
+	if err != nil || !strings.Contains(content.ContentType, "text/plain") {
 		return "", false
 	}
-	resp, err := httpx.Default().Do(req)
-	if err != nil {
-		return "", false
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", false
-	}
-	ct := resp.Header.Get("Content-Type")
-	if !strings.Contains(ct, "text/plain") {
-		return "", false
-	}
-
-	b, err := io.ReadAll(io.LimitReader(resp.Body, MaxBodyBytes))
-	if err != nil {
-		return "", false
-	}
-	return string(b), true
+	return string(content.Body), true
 }
