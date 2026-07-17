@@ -4,7 +4,9 @@ ketch has three search surfaces, each with its own backends: web search (`ketch 
 
 ## Web Search Backends
 
-ketch supports six web-search backends. Set the default with `ketch config set backend <name>`.
+ketch supports six web-search backends. Set the default with `ketch config set backend <name>`. To query several at once, use `ketch search --multi` (rank-fused federation) or `--random` (one shuffled provider with fallback) — see the [command reference](/reference/commands#ketch-search).
+
+Every keyed backend also accepts a pool of keys (`brave_api_keys`, `exa_api_keys`, `firecrawl_api_keys`, `keenable_api_keys`); ketch picks one at random per request and retries once with a different key on `401`/`429` (`402` for Firecrawl). See [multiple API keys](/guide/configuration#multiple-api-keys-per-provider).
 
 ## Brave (default)
 

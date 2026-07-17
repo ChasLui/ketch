@@ -13,7 +13,8 @@ ketch search <query> [flags]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--backend, -b` | `brave` | Search backend: `brave`, `ddg`, `searxng`, `exa`, `firecrawl`, `keenable` |
-| `--multi` | — | Federated search across backends: comma-separated list, or bare/`=all` for every usable backend. Mutually exclusive with `--backend`. |
+| `--multi` | — | Federated search across backends: comma-separated list, or bare/`=all` for every usable backend. Mutually exclusive with `--backend` and `--random`. |
+| `--random` | — | Random provider with fallback: comma-separated list, or bare/`=all` for every usable backend. Mutually exclusive with `--backend` and `--multi`. |
 | `--limit, -l` | `5` | Max number of results |
 | `--scrape` | `false` | Fetch full content from each result |
 | `--minimal` | `false` | One result per line, tab-separated |
@@ -47,6 +48,23 @@ naming the engines that returned it.
   as `warn:` lines (and in the plain-text `failed:` frontmatter key); the search
   only fails (exit 4) when every backend fails.
 
+### Random provider (`--random`)
+
+`--random` shuffles the candidate backends, queries **one**, and falls back to
+the rest in shuffled order only if it fails — stopping at the first successful
+response. Use it to spread load across providers without paying every
+provider's rate limit on every query (unlike `--multi`, which queries them all).
+
+- Value semantics mirror `--multi`: bare `--random` (or `--random=all`) draws
+  from every usable backend; `--random=brave,exa` restricts the pool (the `=`
+  form is required for a list — `--random brave,exa` is rejected with a hint).
+- Mutually exclusive with both `--backend` and `--multi` (validation error,
+  exit 2).
+- Output names the backend that answered; backends that failed before it are
+  reported (stderr `warn:` lines / `failed:` frontmatter). The search fails
+  (exit 4) only when every candidate fails.
+- Also available on the MCP `search` tool as the `random` input.
+
 **Examples:**
 
 ```sh
@@ -57,8 +75,10 @@ ketch search "query" --backend searxng
 ketch search "query" --backend exa
 ketch search "query" --backend firecrawl
 ketch search "query" --backend keenable
-ketch search "rrf rank fusion" --multi                # every usable backend
+ketch search "rrf rank fusion" --multi                # every usable backend, rank-fused
 ketch search "rrf rank fusion" --multi=brave,ddg,exa  # a specific set
+ketch search "query" --random                         # one random usable backend, fallback on failure
+ketch search "query" --random=brave,exa               # random pick restricted to these two
 ketch search "query" --json
 ```
 
@@ -280,6 +300,11 @@ ketch config init         # create default config file
 ketch config set <k> <v>  # set a config value
 ketch config path         # print config file path
 ```
+
+Every config key except `url_rewrites`, `spa_markers`, and the plural
+`*_api_keys` pools can also be set through `KETCH_*` environment variables;
+`ketch config` reports env-sourced values in an `env_overrides` section. See
+[Configuration → Environment Variables](/guide/configuration#environment-variables).
 
 ## ketch cache
 

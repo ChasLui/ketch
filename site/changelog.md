@@ -2,6 +2,16 @@
 
 This page mirrors the canonical [`CHANGELOG.md`](https://github.com/1broseidon/ketch/blob/main/CHANGELOG.md) in the repo root. Versions follow [Semantic Versioning](https://semver.org/) and match the published git tags.
 
+## v0.12.0 — 2026-07-15
+
+**Added**
+
+- **BYO-cookie support** (#25): ketch loads a Netscape `cookies.txt` jar — the format exported by browser cookies.txt extensions and consumed by `curl`/`yt-dlp` — and injects matching cookies on both the HTTP and headless-browser fetch paths, unblocking session- and consent-gated pages. `--cookie-file <path>` on `scrape`, `search` (for `--scrape` fetches), and `crawl`, plus a persistent `cookie_file` config key (the flag overrides config; an explicit empty flag disables cookies for the run). Scope (Domain, HostOnly, Path, Secure) is re-matched on every request and redirect; a configured jar gets an isolated page-cache namespace; cookie values are never printed anywhere, and a group/world-readable jar triggers a `chmod 600` warning.
+- **Multiple API keys per provider** (#23): plural config fields (`brave_api_keys`, `exa_api_keys`, `firecrawl_api_keys`, `keenable_api_keys`) alongside the singular keys. A random key is picked per request to spread rate limits, with one retry on 401/429 (402 for Firecrawl) when the pool holds more than one. `config set` accepts JSON arrays, `ketch config` reports `*_api_keys_count` only, and `ketch doctor` probes the effective pools.
+- **Random provider selection** (#24): `ketch search --random` (or `--random=brave,exa`) shuffles the candidate backends, tries one, and falls back to the rest on failure — stopping at the first successful response. Mirrors `--multi` flag semantics, mutually exclusive with `--backend`/`--multi`, with MCP parity via the `search` tool's `random` input.
+- **PDF text extraction** for `scrape`, `search --scrape`, and `crawl` (#19): text-based PDFs are detected by MIME type or `%PDF-` magic bytes and extracted with a built-in pure-Go parser. An optional external converter (`external_pdf_to_md_converter_command` with exactly one `{input}` placeholder, plus `external_pdf_to_md_converter_timeout_sec`, default 300) is authoritative when configured. `--raw` and `--select` reject PDFs (exit 2); PDFs without a text layer are precondition errors (exit 5) with an OCR hint.
+- Bundled skill verb renamed `research.md` → `ketch-research.md` (#22) to avoid namespace conflicts.
+
 ## v0.11.0 — 2026-07-07
 
 **Added**
