@@ -99,7 +99,7 @@ ketch scrape https://help.example.com/s/article/1234
   "github_token_source": "none",
   "github_token_set": false,
   "available_backends": ["brave", "ddg", "searxng", "exa", "firecrawl", "keenable", "tavily", "parallel", "serpbase"],
-  "available_code_backends": ["grepapp", "sourcegraph", "github"],
+  "available_code_backends": ["grepapp", "sourcegraph", "github", "firecrawl"],
   "available_doc_backends": ["context7"]
 }
 ```

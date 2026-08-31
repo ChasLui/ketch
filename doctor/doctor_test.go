@@ -757,6 +757,54 @@ func TestBuildSpecsParallelDefaultIsRequired(t *testing.T) {
 	}
 }
 
+func TestBuildSpecsCodeFirecrawlGatedOnCodeBackendOnly(t *testing.T) {
+	// A Firecrawl key set for search must not enlist the code check: a
+	// developer search is billed, so it would put a credit cost (and a red
+	// line, once the key lacks developer access) on every doctor run.
+	cfg := config.Defaults()
+	cfg.FirecrawlAPIKey = "fc-secret"
+	if candidate := findSpec(t, buildSpecs(&cfg, http.DefaultClient), "code", "firecrawl"); candidate.required {
+		t.Error("a search-only firecrawl key must not require the code check")
+	}
+
+	cfg.CodeBackend = "firecrawl"
+	if candidate := findSpec(t, buildSpecs(&cfg, http.DefaultClient), "code", "firecrawl"); !candidate.required {
+		t.Error("firecrawl must be required when configured as the code backend")
+	}
+}
+
+func TestProbeFirecrawlDeveloperNoKey(t *testing.T) {
+	// The hosted developer index always needs a key, so this must classify
+	// without spending a request.
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		t.Error("no-key probe must not hit the network")
+	}))
+	defer ts.Close()
+
+	endpoint := config.FirecrawlDeveloperSearchURL(config.DefaultFirecrawlURL)
+	status, detail := probeFirecrawlDeveloper(testCtx(t), ts.Client(), endpoint, "")
+	if status != StatusNoKey {
+		t.Fatalf("status = %q, want no_key", status)
+	}
+	if !strings.Contains(detail, "firecrawl_api_key") {
+		t.Errorf("detail %q should carry the config hint", detail)
+	}
+}
+
+func TestFirecrawlProbeBodiesMatchTheirEndpoints(t *testing.T) {
+	// The two endpoints take different parameter names; sending the search
+	// body to the developer index is a 400, not a health signal.
+	if !strings.Contains(firecrawlSearchBody, `"limit"`) {
+		t.Errorf("search body lost its limit parameter: %s", firecrawlSearchBody)
+	}
+	if !strings.Contains(firecrawlDeveloperBody, `"k"`) {
+		t.Errorf("developer body must use k, got: %s", firecrawlDeveloperBody)
+	}
+	if strings.Contains(firecrawlDeveloperBody, `"limit"`) {
+		t.Errorf("developer body must not send limit: %s", firecrawlDeveloperBody)
+	}
+}
+
 func TestProbeKeyPoolChecksEveryKeyAndRejectsPool(t *testing.T) {
 	keys := []string{"accepted-secret", "rejected-secret", "rate-limited-secret"}
 	var mu sync.Mutex

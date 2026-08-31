@@ -176,6 +176,9 @@ func probeBrave(ctx context.Context, client *http.Client, endpoint, apiKey strin
 const (
 	firecrawlSearchBody   = `{"query":"ketch","limit":1}`
 	firecrawlLivenessBody = `{}`
+	// The Developer Index takes k rather than limit, and exists only on the
+	// hosted API — there is no self-hosted liveness variant.
+	firecrawlDeveloperBody = `{"query":"ketch","k":1}`
 )
 
 // probeFirecrawl checks the Firecrawl v2 search API. The hosted cloud API
@@ -188,13 +191,28 @@ const (
 // can establish about an instance it has no credentials for. Instances running
 // without auth are probed without an Authorization header.
 func probeFirecrawl(ctx context.Context, client *http.Client, endpoint, apiKey string) (Status, string) {
+	return probeFirecrawlEndpoint(ctx, client, endpoint, apiKey, firecrawlSearchBody)
+}
+
+// probeFirecrawlDeveloper checks the Developer Index endpoint that backs the
+// firecrawl code backend. It is hosted-only, so it never takes the self-hosted
+// liveness path.
+func probeFirecrawlDeveloper(ctx context.Context, client *http.Client, endpoint, apiKey string) (Status, string) {
+	return probeFirecrawlEndpoint(ctx, client, endpoint, apiKey, firecrawlDeveloperBody)
+}
+
+// probeFirecrawlEndpoint carries the shared logic; hostedBody is the request
+// sent when the endpoint belongs to the hosted API.
+func probeFirecrawlEndpoint(ctx context.Context, client *http.Client, endpoint, apiKey, hostedBody string) (Status, string) {
 	key := strings.TrimSpace(apiKey)
-	hosted := strings.EqualFold(endpoint, config.FirecrawlSearchURL(config.DefaultFirecrawlURL))
+	// Prefix, not equality: the hosted base serves both /v2/search and
+	// /v2/search/developer, and both must count as hosted.
+	hosted := strings.HasPrefix(strings.ToLower(endpoint), strings.ToLower(config.DefaultFirecrawlURL))
 	if key == "" && hosted {
 		return StatusNoKey, "API key not set (get one free at https://firecrawl.dev then: ketch config set firecrawl_api_key <key>)"
 	}
 
-	body := firecrawlSearchBody
+	body := hostedBody
 	if !hosted {
 		body = firecrawlLivenessBody
 	}

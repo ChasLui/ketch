@@ -58,3 +58,30 @@ func TestFirecrawlSearchURL(t *testing.T) {
 		}
 	}
 }
+
+func TestFirecrawlDeveloperSearchURL(t *testing.T) {
+	hosted := DefaultFirecrawlURL + "/v2/search/developer"
+	tests := []struct {
+		base string
+		want string
+	}{
+		{"", hosted},
+		{DefaultFirecrawlURL, hosted},
+		{DefaultFirecrawlURL + "/", hosted},
+		{"http://localhost:3002", "http://localhost:3002/v2/search/developer"},
+		{"  http://fc.local/  ", "http://fc.local/v2/search/developer"},
+		// The developer path extends the search path, so a pasted developer
+		// endpoint must be stripped whole rather than leaving a "/developer"
+		// tail behind.
+		{hosted, hosted},
+		{hosted + "/", hosted},
+		{"http://localhost:3002/v2/search/developer", "http://localhost:3002/v2/search/developer"},
+		// A pasted plain search endpoint still reduces to its base.
+		{"http://localhost:3002/v2/search", "http://localhost:3002/v2/search/developer"},
+	}
+	for _, tc := range tests {
+		if got := FirecrawlDeveloperSearchURL(tc.base); got != tc.want {
+			t.Errorf("FirecrawlDeveloperSearchURL(%q) = %q, want %q", tc.base, got, tc.want)
+		}
+	}
+}

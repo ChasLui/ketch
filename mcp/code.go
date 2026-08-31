@@ -11,8 +11,8 @@ import (
 // CodeInput is the input schema for the "code" tool.
 type CodeInput struct {
 	Query   string `json:"query" jsonschema:"the code search query"`
-	Backend string `json:"backend,omitempty" jsonschema:"code search backend: grepapp, sourcegraph, or github (default: the configured backend)"`
-	Lang    string `json:"lang,omitempty" jsonschema:"language filter appended to the query"`
+	Backend string `json:"backend,omitempty" jsonschema:"code search backend: grepapp, sourcegraph, github, or firecrawl (default: the configured backend)"`
+	Lang    string `json:"lang,omitempty" jsonschema:"language filter appended to the query; on firecrawl it scopes to GitHub repos and drops documentation results"`
 	Limit   int    `json:"limit,omitempty" jsonschema:"max number of results (default: the configured limit)"`
 	Regexp  bool   `json:"regexp,omitempty" jsonschema:"interpret query as a regular expression (grepapp, sourcegraph only)"`
 }
@@ -27,7 +27,7 @@ type CodeOutput struct {
 func (s *Server) registerCodeTool() {
 	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
 		Name: "code",
-		Description: "Search code across open-source repositories using Grep (mcp.grep.app), Sourcegraph, or GitHub Code Search (default: the configured backend)." +
+		Description: "Search code across open-source repositories using Grep (mcp.grep.app), Sourcegraph, GitHub Code Search, or the Firecrawl Developer Index (semantic retrieval over issues, merged PRs, READMEs and curated docs) (default: the configured backend)." +
 			errTaxonomy,
 		Annotations: readOnlyOpenWorld(),
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CodeInput) (*mcpsdk.CallToolResult, CodeOutput, error) {

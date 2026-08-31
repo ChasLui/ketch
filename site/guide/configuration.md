@@ -40,7 +40,7 @@ The discovery payload:
   "github_token_set": false,
   "external_pdf_to_md_converter_timeout_sec": 300,
   "available_backends": ["brave", "ddg", "searxng", "exa", "firecrawl", "keenable", "tavily", "parallel", "serpbase"],
-  "available_code_backends": ["grepapp", "sourcegraph", "github"],
+  "available_code_backends": ["grepapp", "sourcegraph", "github", "firecrawl"],
   "available_doc_backends": ["context7"]
 }
 ```
@@ -124,7 +124,7 @@ and `ketch doctor` probes the effective pool.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `code_backend` | `grepapp` | Default `ketch code` backend: `grepapp`, `sourcegraph`, `github` |
+| `code_backend` | `grepapp` | Default `ketch code` backend: `grepapp`, `sourcegraph`, `github`, `firecrawl` |
 | `docs_backend` | `context7` | Default `ketch docs` backend: `context7`, `local` |
 | `sourcegraph_url` | `https://sourcegraph.com` | Sourcegraph instance URL (for self-hosted) |
 | `context7_api_key` | — | Context7 API key (required for `ketch docs`) |

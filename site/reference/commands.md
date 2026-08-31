@@ -97,9 +97,9 @@ ketch code <query> [flags]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--backend, -b` | `grepapp` | Code backend: `grepapp`, `sourcegraph`, `github` |
+| `--backend, -b` | `grepapp` | Code backend: `grepapp`, `sourcegraph`, `github`, `firecrawl` |
 | `--limit, -l` | `5` | Max number of results |
-| `--lang` | — | Language filter (appended to query) |
+| `--lang` | — | Language filter (appended to query; on `firecrawl` it also drops doc results) |
 | `--regex` | `false` | Interpret query as regex (`grepapp`, `sourcegraph`) |
 | `--minimal` | `false` | One result per line, tab-separated |
 
@@ -327,7 +327,7 @@ ketch cache clear         # remove all cached pages
 ## ketch doctor
 
 Run live health checks against every surface: search backends
-(brave/ddg/searxng/exa/firecrawl/keenable/tavily/parallel/serpbase), code backends (grepapp/sourcegraph/github), docs
+(brave/ddg/searxng/exa/firecrawl/keenable/tavily/parallel/serpbase), code backends (grepapp/sourcegraph/github/firecrawl), docs
 (context7), the configured browser binary, and the page cache. Probes run
 concurrently with a per-check timeout and are read-only (nothing is written
 to the cache).

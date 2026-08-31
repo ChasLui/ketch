@@ -77,11 +77,13 @@ Use --concurrency N (default 5) to control parallel request limit.
 | `grepapp` (default) | Zero config | Grep MCP (`mcp.grep.app`), no token, literal/regex over 1M+ public repos |
 | `sourcegraph` | Zero config | Grep-style, ~1M OSS repos, exact line matches, SSE stream |
 | `github` | `gh auth login` or `ketch config set github_token <tok>` | REST `/search/code` + GraphQL stars batch, 30 req/min |
+| `firecrawl` | `ketch config set firecrawl_api_key <key>` (shared with search) | Developer Index — semantic retrieval over issues, merged PRs, READMEs, curated docs. Artifacts, not source lines: no `line`/`stars`/`language`. Hosted-only (ignores self-hosted semantics), no `--regex`, `--limit` clamped to 100, `--lang` also drops doc results. 2 credits / 10 results |
 
 ```bash
 ketch code "http.NewRequestWithContext" --lang go
 ketch code "NewRequestWith.*Context" --regex
 ketch code "rate limit middleware" --lang go -b github --limit 10
+ketch code "how do I configure http client retries" -b firecrawl   # prose question, not a pattern
 ketch config set sourcegraph_url https://sourcegraph.com  # optional, for self-hosted
 ketch config set firecrawl_url http://localhost:3002      # optional, self-hosted Firecrawl
 ```

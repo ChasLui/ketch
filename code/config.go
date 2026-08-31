@@ -31,6 +31,18 @@ func NewFromConfig(cfg *config.Config, backend string) (Searcher, error) {
   - or run:     gh auth login`)
 		}
 		return NewGitHub(token), nil
+	case "firecrawl":
+		// Unlike search's firecrawl backend, this one always requires a key:
+		// the Developer Index is hosted-only, with no self-hosted equivalent
+		// that a keyless firecrawl_url could reach.
+		keys := cfg.FirecrawlKeys()
+		if len(keys) == 0 {
+			return nil, fmt.Errorf(`firecrawl code search: no API key found.
+  - explicit:   ketch config set firecrawl_api_key <key>
+  - env var:    export KETCH_FIRECRAWL_API_KEY=<key>
+  - free key:   https://firecrawl.dev`)
+		}
+		return NewFirecrawl(keys, cfg.EffectiveFirecrawlURL()), nil
 	default:
 		return nil, fmt.Errorf("%w %q (available: %s)", ErrUnknownBackend, backend, strings.Join(config.AvailableCodeBackends(), ", "))
 	}

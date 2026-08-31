@@ -15,7 +15,7 @@ import (
 var codeCmd = &cobra.Command{
 	Use:   "code <query>",
 	Short: "Search code across open-source repositories",
-	Long:  `Search code using Grep (mcp.grep.app; no token, literal/regex over 1M+ public repos), Sourcegraph, or GitHub Code Search (default: the configured backend; grepapp if unset). Supports language filtering and per-backend query qualifiers.`,
+	Long:  `Search code using Grep (mcp.grep.app; no token, literal/regex over 1M+ public repos), Sourcegraph, GitHub Code Search, or the Firecrawl Developer Index (semantic retrieval over issues, merged PRs, READMEs and curated docs; needs firecrawl_api_key). Default: the configured backend; grepapp if unset. Supports language filtering and per-backend query qualifiers.`,
 	Args:  exitArgs(cobra.MinimumNArgs(1)),
 	RunE:  runCode,
 }
@@ -23,7 +23,7 @@ var codeCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(codeCmd)
 	codeCmd.Flags().StringP("backend", "b", cfg.CodeBackend, "code search backend: "+strings.Join(config.AvailableCodeBackends(), ", "))
-	codeCmd.Flags().String("lang", "", "language filter (appended to query)")
+	codeCmd.Flags().String("lang", "", "language filter (appended to query; on firecrawl it scopes to GitHub repos and drops doc results)")
 	codeCmd.Flags().Bool("regex", false, "interpret query as a regular expression (grepapp, sourcegraph)")
 	codeCmd.Flags().IntP("limit", "l", cfg.Limit, "max number of results")
 	codeCmd.Flags().Bool("minimal", false, "one result per line, tab-separated (url/repo/snippet)")

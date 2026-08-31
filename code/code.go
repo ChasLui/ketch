@@ -14,7 +14,7 @@ type Result struct {
 	Language string `json:"language,omitempty"`
 	Stars    int    `json:"stars,omitempty"`
 	URL      string `json:"url"`
-	Source   string `json:"source"` // "sourcegraph" | "grepapp" | "github"
+	Source   string `json:"source"` // "sourcegraph" | "grepapp" | "github" | "firecrawl"
 }
 
 // Query describes a code search request. Required fields are Term and Limit;

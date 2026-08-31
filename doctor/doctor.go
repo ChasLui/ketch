@@ -182,6 +182,15 @@ func buildSpecs(cfg *config.Config, client *http.Client) []spec {
 		{"code", "github", cfg.CodeBackend == "github", func(ctx context.Context) (Status, string) {
 			return probeGitHub(ctx, client, githubAPIBase, resolveGithub)
 		}},
+		// Gated on code_backend alone, unlike the search firecrawl check: a
+		// developer search costs credits, so merely having a Firecrawl key for
+		// search must not buy every `ketch doctor` run an extra billed probe.
+		{"code", "firecrawl", cfg.CodeBackend == "firecrawl", func(ctx context.Context) (Status, string) {
+			endpoint := config.FirecrawlDeveloperSearchURL(firecrawlURL)
+			return probeKeyPool(firecrawlKeys, func(key string) (Status, string) {
+				return probeFirecrawlDeveloper(ctx, client, endpoint, key)
+			})
+		}},
 		{"docs", "context7", cfg.DocsBackend == "context7" || c7Key != "", func(ctx context.Context) (Status, string) {
 			return probeContext7(ctx, client, context7APIBase, c7Key)
 		}},

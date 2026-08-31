@@ -11,7 +11,7 @@ A stateless CLI for web search, code search, library docs, and scraping — one 
 Most research tooling for agents means wiring up several provider SDKs, each with its own auth and response shape. ketch collapses that into one binary with three research surfaces:
 
 - `ketch search` — web search (Brave, DuckDuckGo, SearXNG, Exa, Firecrawl, Keenable, Tavily, Parallel, or SerpBase)
-- `ketch code` — grep real OSS source across public repos (Grep, Sourcegraph, or GitHub Code Search)
+- `ketch code` — grep real OSS source across public repos (Grep, Sourcegraph, GitHub Code Search), or ask in prose against Firecrawl's Developer Index
 - `ketch docs` — curated, version-aware library documentation (Context7)
 
 Plus `ketch scrape` and `ketch crawl` to turn HTML pages and text-based PDFs into clean markdown.
@@ -143,7 +143,7 @@ Every command supports `-h/--help` for its full flag list; `--json` is the only 
 | Surface | Default | Also available | Setup |
 |---|---|---|---|
 | `search` | `brave` | `ddg`, `searxng`, `exa`, `firecrawl`, `keenable`, `tavily`, `parallel`, `serpbase` | Brave, Firecrawl, Tavily, and SerpBase need a free key (`ketch config set brave_api_key <key>` / `firecrawl_api_key` / `tavily_api_key` / `serpbase_api_key`); `ddg`, `searxng`, `exa`, `keenable`, and `parallel` work with zero config |
-| `code` | `grepapp` | `sourcegraph`, `github` | Grep and Sourcegraph need nothing; GitHub uses `gh auth login`, `$GITHUB_TOKEN`, or `ketch config set github_token <tok>` |
+| `code` | `grepapp` | `sourcegraph`, `github`, `firecrawl` | Grep and Sourcegraph need nothing; GitHub uses `gh auth login`, `$GITHUB_TOKEN`, or `ketch config set github_token <tok>`; `firecrawl` reuses `firecrawl_api_key` and searches issues/PRs/READMEs/docs semantically instead of grepping source |
 | `docs` | `context7` | `local` (planned, not yet implemented) | Free key: `ketch config set context7_api_key <key>` |
 
 ## Why it works well for agents

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Firecrawl Developer Index code backend.** `ketch code -b firecrawl` searches Firecrawl's semantic index of issues, merged pull requests, READMEs and curated documentation sites via `POST https://api.firecrawl.dev/v2/search/developer` with Bearer auth, filling the gap the three grep-style backends leave: asking a question in prose instead of knowing the string to match. Reuses the existing `firecrawl_api_key` / `firecrawl_api_keys` pool (same provider, same billing account) with the same random-start, rotate-once-on-401/402/429 behaviour, and requires a key unconditionally — unlike the search backend, the Developer Index is hosted-only, so a keyless `firecrawl_url` cannot reach it. Results are artifacts rather than source lines: the id prefix (`readme:`/`issue:`/`pull_request:`/`doc:`/`web:`) becomes `path`, repository-backed kinds fill `repo` with `owner/repo` while documentation and web artifacts fall back to the URL host, and `snippet` carries the title plus the matched passages as markdown (bounded to 1200 runes). `line`, `stars` and `language` stay empty because the index does not return them. `--regex` is rejected with the existing `[validation]` pointer to grepapp/sourcegraph; `--limit` is clamped to the API's ceiling of 100 rather than failing the request; `--lang` maps to the index's repository-attribute filter, which also drops documentation results. Wired through `AvailableCodeBackends`, `code.NewFromConfig`, the CLI, MCP, and `ketch doctor` (gated on `code_backend` alone so a search-only Firecrawl key does not add a billed probe to every run — a developer search costs 2 credits per 10 results).
+
 ## [0.14.0] - 2026-08-07
 
 ### Added

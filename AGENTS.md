@@ -102,6 +102,7 @@ ketch browser status                        # check browser config
 ketch browser install                       # download Chromium
 ketch code "query"                          # code search (grepapp)
 ketch code "query" --lang go               # with language filter
+ketch code "prose question" -b firecrawl   # semantic: issues/PRs/READMEs/docs
 ketch docs "query"                          # docs search (context7)
 ketch docs "query" --library /org/repo     # skip resolve, fetch directly
 ketch docs --resolve "library name"        # resolve library name → Context7 IDs
@@ -129,7 +130,7 @@ ketch mcp serve                             # run as an MCP server over stdio (s
 | --background | crawl | false | Run in background |
 | --allow | crawl | — | Path substring filters |
 | --deny | crawl | — | Regex deny patterns |
-| --backend, -b | code | grepapp | Code backend (grepapp/sourcegraph/github) |
+| --backend, -b | code | grepapp | Code backend (grepapp/sourcegraph/github/firecrawl) |
 | --backend, -b | docs | context7 | Docs backend (context7; local is planned, not implemented) |
 | --lang | code | — | Language qualifier (appended to query) |
 | --library | docs | — | Context7 library ID, skips resolve |

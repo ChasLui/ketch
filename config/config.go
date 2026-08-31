@@ -124,6 +124,12 @@ const DefaultFirecrawlURL = "https://api.firecrawl.dev"
 // search endpoint. See https://docs.firecrawl.dev/api-reference/endpoint/search.
 const firecrawlSearchPath = "/v2/search"
 
+// firecrawlDeveloperSearchPath reaches the Developer Index, a separate index of
+// issues, merged pull requests, READMEs and curated documentation sites. It
+// backs the firecrawl code backend rather than search.
+// See https://docs.firecrawl.dev/features/developer.
+const firecrawlDeveloperSearchPath = "/v2/search/developer"
+
 // Defaults returns the built-in default configuration.
 func Defaults() Config {
 	return Config{
@@ -145,6 +151,9 @@ func Defaults() Config {
 // .../v2/search/v2/search.
 func normalizeFirecrawlBase(base string) string {
 	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	// Developer path first: it extends the search path, so stripping /v2/search
+	// beforehand would leave /v2/search/developer unmatched.
+	base = strings.TrimSuffix(base, firecrawlDeveloperSearchPath)
 	base = strings.TrimSuffix(base, firecrawlSearchPath)
 	return strings.TrimRight(base, "/")
 }
@@ -175,13 +184,25 @@ func FirecrawlSearchURL(base string) string {
 	return base + firecrawlSearchPath
 }
 
+// FirecrawlDeveloperSearchURL joins a Firecrawl API base with the Developer
+// Index path, normalizing the base exactly as FirecrawlSearchURL does.
+func FirecrawlDeveloperSearchURL(base string) string {
+	base = normalizeFirecrawlBase(base)
+	if base == "" {
+		base = DefaultFirecrawlURL
+	}
+	return base + firecrawlDeveloperSearchPath
+}
+
 // AvailableBackends returns the list of known search backends.
 func AvailableBackends() []string {
 	return []string{"brave", "ddg", "searxng", "exa", "firecrawl", "keenable", "tavily", "parallel", "serpbase"}
 }
 
 // AvailableCodeBackends returns the list of known code search backends.
-func AvailableCodeBackends() []string { return []string{"grepapp", "sourcegraph", "github"} }
+func AvailableCodeBackends() []string {
+	return []string{"grepapp", "sourcegraph", "github", "firecrawl"}
+}
 
 // AvailableDocBackends returns the list of usable docs backends. The local
 // FTS5 backend is planned but not implemented, so it is not advertised here;

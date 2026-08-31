@@ -36,9 +36,11 @@ The two transports expose the same options under different spellings. Both direc
 
 ## code
 
-- Backends: `grepapp` (default; keyless, public OSS repos via grep.app), `sourcegraph` (keyless), `github` (auth via `gh auth login`, `$GITHUB_TOKEN`, or `ketch config set github_token <tok>`).
-- `lang` is appended to the query as a language filter.
-- `regexp` / `--regex`: grepapp and sourcegraph only. github rejects it — `[validation]` / exit 2 with a pointer to the backends that support it.
+- Backends: `grepapp` (default; keyless, public OSS repos via grep.app), `sourcegraph` (keyless), `github` (auth via `gh auth login`, `$GITHUB_TOKEN`, or `ketch config set github_token <tok>`), `firecrawl` (Developer Index; needs `firecrawl_api_key`).
+- **Routing within the surface:** grepapp/sourcegraph/github grep for a *string you already know*. `firecrawl` answers a *question in prose* — "how do I configure retries", "where was this fixed" — over issues, merged PRs, READMEs and curated docs, returning matched passages as markdown. Pick by which one you have.
+- `lang` is appended to the query as a language filter. On `firecrawl` it maps to a repository-attribute filter that also removes documentation results.
+- `regexp` / `--regex`: grepapp and sourcegraph only. github and firecrawl reject it — `[validation]` / exit 2 with a pointer to the backends that support it.
+- `firecrawl` results are artifacts, not source lines: `path` is the kind (`readme`, `issue#123`, `pull_request#456`, `doc`, `web`), `repo` is `owner/repo` or the site host, and `line`/`stars`/`language` are always empty. `limit` is capped at 100 (clamped, not rejected); billing is 2 credits per 10 results.
 - grepapp intermittently returns 504 (`[upstream]`); an immediate single retry usually succeeds.
 
 ## docs
@@ -74,7 +76,7 @@ The two transports expose the same options under different spellings. Both direc
 | Surface | Keyless | Keyed | Set with |
 | --- | --- | --- | --- |
 | search | ddg, searxng (self-hosted), exa, keenable, parallel | brave, firecrawl, tavily, serpbase | `ketch config set brave_api_key <key>` / `firecrawl_api_key` / `tavily_api_key` / `serpbase_api_key` |
-| code | grepapp, sourcegraph | github | `gh auth login` / `$GITHUB_TOKEN` / `ketch config set github_token <tok>` |
+| code | grepapp, sourcegraph | github, firecrawl | `gh auth login` / `$GITHUB_TOKEN` / `ketch config set github_token <tok>`; firecrawl reuses `firecrawl_api_key` |
 | docs | — | context7 (free key) | `ketch config set context7_api_key <key>` |
 
 A missing-key call fails with `[precondition]` / exit 5 and an error message that names the fix (brave's includes the signup URL and the exact `config set` command).

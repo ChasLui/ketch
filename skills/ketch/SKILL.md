@@ -31,7 +31,7 @@ Use only these terms in ketch output.
 | --- | --- |
 | **surface** | One of the five research operations: `search`, `code`, `docs`, `scrape`, `crawl` |
 | **transport** | How a surface is called: the CLI binary (default) or the optional MCP tools |
-| **backend** | The provider behind a surface: brave/ddg/searxng/exa/firecrawl/keenable/tavily/parallel/serpbase (search), grepapp/sourcegraph/github (code), context7 (docs) |
+| **backend** | The provider behind a surface: brave/ddg/searxng/exa/firecrawl/keenable/tavily/parallel/serpbase (search), grepapp/sourcegraph/github/firecrawl (code), context7 (docs) |
 | **operator action** | A system-managing or diagnostic command — `config set`, `cache`, `browser install`, background crawls, `doctor` — CLI-only by design |
 | **error prefix** | The stable class on every ketch error: CLI exit codes 2–6, mirrored as the bracketed prefix opening every MCP tool error — `[validation]`, `[not_found]`, `[upstream]`, `[precondition]`, `[cancelled]` |
 | **fan-out** | How many queries are searched and URLs scraped under one plan |
@@ -117,7 +117,7 @@ In reverse: `search` finds URLs; `scrape` reads them; `crawl` reads a site; `cod
 | 5 | `[precondition]` | Operator config missing | Stop researching; enter `ketch setup` |
 | 6 | `[cancelled]` | Cancelled or timed out | Rerun with smaller scope |
 
-Situations → class: unknown backend, `regexp` on github → `[validation]`. Selector matched nothing → `[not_found]`. ddg rate limit (it rate-limits readily under fan-out), DNS failure, grepapp's intermittent 504 → `[upstream]`, rotate or retry once. Missing API key, docs backend `local` (planned, unimplemented), `force_browser` with no browser configured → `[precondition]`. One asymmetry: a CLI `crawl` interrupted by SIGINT exits **0** with partial results, by design.
+Situations → class: unknown backend, `regexp` on github or firecrawl → `[validation]`. Selector matched nothing → `[not_found]`. ddg rate limit (it rate-limits readily under fan-out), DNS failure, grepapp's intermittent 504 → `[upstream]`, rotate or retry once. Missing API key, docs backend `local` (planned, unimplemented), `force_browser` with no browser configured → `[precondition]`. One asymmetry: a CLI `crawl` interrupted by SIGINT exits **0** with partial results, by design.
 
 ## Gotchas
 
@@ -126,7 +126,8 @@ Detail for each lives in `references/surfaces.md`.
 - Scraping a **bare domain** auto-probes `/llms.txt` and may silently return that instead of the homepage — the `title` field reveals the swap; `no_llms_txt` opts out.
 - `docs` is a two-step: `resolve` the name → **vet the matches** → fetch by `library` ID. Resolve never returns empty — garbage in gets confident fuzzy matches out, so check the name, not just the trust score.
 - Batch scrape reports per-URL failures inside a successful call: `isError=false` with `results[].error` set. Check every entry.
-- `regexp` works on grepapp and sourcegraph only; github rejects it with a pointer to those backends.
+- `regexp` works on grepapp and sourcegraph only; github and firecrawl reject it with a pointer to those backends.
+- On the code surface, pick the backend by what you have: a string to grep → grepapp/sourcegraph/github; a question in prose → `firecrawl` (Developer Index: issues, merged PRs, READMEs, curated docs, with matched passages).
 - Background crawls (`--background`, `status`, `stop`) are CLI-only; the MCP `crawl` is synchronous and capped.
 - The page cache (bbolt, 72h default TTL) is single-process: a long-running MCP server holds the lock, so concurrent CLI scrapes silently run cache-disabled — `ketch doctor` reports the cache as locked by another process. Running the server degrades the CLI; prefer CLI-only when both would run long-term.
 

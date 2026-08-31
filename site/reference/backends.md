@@ -163,6 +163,30 @@ GitHub Code Search (REST `/search/code`) with a batched GraphQL call for star co
 
 **Limits:** 30 requests/minute. Token must have `repo` scope.
 
+### Firecrawl Developer Index
+
+The odd one out: the other three grep source code, this one retrieves *artifacts* semantically. Ask a question in prose — "how do I configure http client retries", "where was this bug fixed" — and get back ranked issues, merged pull requests, READMEs and curated documentation pages with the passages that matched, as markdown.
+
+Reach for it when you don't know the string to grep for. Stay on `grepapp` when you do.
+
+**Setup:** `ketch config set firecrawl_api_key <key>` — the same key the Firecrawl search backend uses. `firecrawl_api_keys` rotation applies here too. Unlike the search backend, a key is always required: the Developer Index is a hosted product, so `firecrawl_url` cannot point this backend at a self-hosted instance.
+
+**Results** are artifacts, not source lines, so they differ in shape from the other backends:
+
+| Field | Value |
+|---|---|
+| `path` | The artifact kind: `readme`, `issue#123`, `pull_request#456`, `doc`, or `web` |
+| `repo` | `owner/repo` for repository-backed artifacts; the site host for `doc` and `web` |
+| `snippet` | Title plus the matched passages, as markdown, bounded to 1200 characters |
+| `line`, `stars`, `language` | Always empty — the index does not return them |
+
+**Limits:**
+
+- `--regex` is not supported (use `grepapp` or `sourcegraph`).
+- `--limit` is capped at 100; larger values are clamped rather than rejected.
+- `--lang` maps to a repository-attribute filter, which also removes documentation results — a `--lang go` search returns issues, PRs and READMEs only.
+- Billing: 2 credits per 10 results.
+
 ## Docs Backends
 
 `ketch docs` fetches library documentation. Set the default with `ketch config set docs_backend <name>`.
