@@ -10,7 +10,7 @@ A stateless CLI for web search, code search, library docs, and scraping — one 
 
 Most research tooling for agents means wiring up several provider SDKs, each with its own auth and response shape. ketch collapses that into one binary with three research surfaces:
 
-- `ketch search` — web search (Brave, DuckDuckGo, SearXNG, Exa, Firecrawl, Keenable, Tavily, Parallel, SerpBase, Serply, or You.com)
+- `ketch search` — web search, no API key required (Brave, DuckDuckGo, SearXNG, Exa, Firecrawl, Keenable, Tavily, Parallel, SerpBase, Serply, or You.com)
 - `ketch code` — grep real OSS source across public repos (Grep, Sourcegraph, or GitHub Code Search)
 - `ketch docs` — curated, version-aware library documentation (Context7)
 
@@ -26,8 +26,14 @@ An operator configures the backend once (`ketch config set backend searxng`); ev
 ## Install
 
 ```sh
+# macOS / Linux, any of x86_64 or arm64
+curl -fsSL https://ketch.run/install | sh
+
 # Homebrew
-brew install 1broseidon/tap/ketch
+brew install ketch
+
+# npm
+npm install -g ketch-cli
 
 # go install
 go install github.com/1broseidon/ketch@latest
@@ -35,6 +41,13 @@ go install github.com/1broseidon/ketch@latest
 # Or download a prebuilt binary (linux/darwin/windows, amd64/arm64)
 # from https://github.com/1broseidon/ketch/releases
 ```
+
+The install script picks the right build for your OS and architecture, verifies it
+against the release's `checksums.txt`, and drops the binary in `/usr/local/bin` when
+that's writable, otherwise `~/.local/bin`. Read it first if you'd rather not pipe to a
+shell: [`install.sh`](https://github.com/1broseidon/ketch/blob/main/install.sh). Pin a
+version or change the target directory with
+`sh -s -- --version v0.17.0 --bin-dir ~/bin`.
 
 ## Quickstart
 
@@ -69,14 +82,26 @@ harness/harness  registry/app/remote/clients/registry/client.go  (line 207)
 ...
 ```
 
-Web search needs a backend configured first — the default (`brave`) requires a free API key:
+Web search works with zero configuration too — the default backend (`auto`)
+falls back through the keyless providers, so there is no key to set first:
 
 ```sh
-ketch config set brave_api_key <key>
 ketch search "golang error handling"
 ketch search "golang error handling" --scrape   # fetch + extract full content per result
 ketch search "golang error handling" --multi    # federate across every usable backend, rank-fused
 ketch search "golang error handling" --random  # pick one random backend, fallback to rest on failure
+```
+
+`auto` tries providers in a fixed order and returns the first that answers,
+reporting which one served in the `backend:` field. It prefers whatever you
+have actually configured — your own SearXNG or Degoog instance first, then any
+provider you have set a key for — and only then the keyless hosted providers.
+So setting a key is still how you get a specific provider and higher limits,
+and you do not have to also set `backend` for it to take effect:
+
+```sh
+ketch config set brave_api_key <key>   # auto now prefers Brave
+ketch search "golang error handling" -b ddg   # or pick a provider explicitly
 ```
 
 `--multi` queries several backends at once and fuses their rankings with
@@ -86,7 +111,7 @@ deduplicating by URL and tagging each result with the engines that returned it.
 ideal when you want one provider's results without wasting rate limits on all
 of them. Both support bare (all usable backends) or `=brave,exa` explicit lists, and both
 are mutually exclusive with `--backend` and each other.
-See [`site/reference/commands.md`](./site/reference/commands.md).
+See the [command reference](https://ketch.run/#commands).
 
 Every command takes `--json` for structured output:
 
@@ -136,13 +161,13 @@ When configured, the external converter is authoritative: failures are returned 
 | `mcp` | Run ketch as an MCP server over stdio (`mcp serve`) — the five research surfaces as tools |
 | `version` | Print version, commit, build date |
 
-Every command supports `-h/--help` for its full flag list; `--json` is the only flag global to every command. Full flag reference lives at [1broseidon.github.io/ketch](https://1broseidon.github.io/ketch/).
+Every command supports `-h/--help` for its full flag list; `--json` is the only flag global to every command. Full flag reference lives at [ketch.run](https://ketch.run/).
 
 ### Backends
 
 | Surface | Default | Also available | Setup |
 |---|---|---|---|
-| `search` | `brave` | `ddg`, `searxng`, `exa`, `firecrawl`, `keenable`, `tavily`, `parallel`, `serpbase`, `degoog`, `serply`, `youcom` | Brave, Tavily, SerpBase, and Serply need a free key (`ketch config set brave_api_key <key>` / `tavily_api_key` / `serpbase_api_key` / `serply_api_key`); `ddg`, `searxng`, `exa`, `firecrawl`, `keenable`, `parallel`, and `youcom` work with zero config (`firecrawl_api_key` and `youcom_api_key` are optional and lift the hosted caps); `degoog` needs a self-hosted instance (`ketch config set degoog_url <url>`) |
+| `search` | `auto` | `brave`, `ddg`, `searxng`, `exa`, `firecrawl`, `keenable`, `tavily`, `parallel`, `serpbase`, `degoog`, `serply`, `youcom` | Nothing — `auto` falls back through the keyless providers (`parallel` → `exa` → `keenable` → `youcom` → `firecrawl` → `ddg`) and needs no key. Brave, Tavily, SerpBase, and Serply need a free key (`ketch config set brave_api_key <key>` / `tavily_api_key` / `serpbase_api_key` / `serply_api_key`) and `auto` prefers them once set; `firecrawl_api_key`, `exa_api_key`, `keenable_api_key`, and `youcom_api_key` are optional and lift the hosted caps. `degoog` needs a self-hosted instance (`ketch config set degoog_url <url>`), `searxng` an instance URL (`ketch config set searxng_url <url>`); both are preferred over hosted APIs once configured |
 | `code` | `grepapp` | `sourcegraph`, `github` | Grep and Sourcegraph need nothing; GitHub uses `gh auth login`, `$GITHUB_TOKEN`, or `ketch config set github_token <tok>` |
 | `docs` | `context7` | `local` (planned, not yet implemented) | Free key: `ketch config set context7_api_key <key>` |
 
@@ -187,7 +212,7 @@ Precedence is **CLI flag > `KETCH_*` env > config file > built-in default**. Not
 - Invalid env values (e.g. `KETCH_LIMIT=abc`) fail loudly on commands that use config, naming the offending variable; `ketch version` and `ketch config set/path` still work.
 - Secret `KETCH_*` vars are stripped from the environment of spawned subprocesses (headless browser, external PDF converter).
 
-Other configurable keys include per-backend API keys (`brave_api_key`, `brave_api_keys` for multi-key rotation, `exa_api_key`, `firecrawl_api_key`, `keenable_api_key`, `tavily_api_key`, `serpbase_api_key`, `serply_api_key`, `youcom_api_key`, `context7_api_key`, `github_token`), `firecrawl_url` / `sourcegraph_url` / `degoog_url` (self-hosted overrides), `cache_ttl`, `url_rewrites` (regex rewrite rules applied before fetch), `spa_markers` (extra JS-shell detection tokens), `cookie_file` (see below), and the optional external PDF converter command/timeout. Multiple keys per provider are picked randomly per request to spread rate limits. See the [config reference](https://1broseidon.github.io/ketch/) for the full list.
+Other configurable keys include per-backend API keys (`brave_api_key`, `brave_api_keys` for multi-key rotation, `exa_api_key`, `firecrawl_api_key`, `keenable_api_key`, `tavily_api_key`, `serpbase_api_key`, `serply_api_key`, `youcom_api_key`, `context7_api_key`, `github_token`), `firecrawl_url` / `sourcegraph_url` / `degoog_url` (self-hosted overrides), `cache_ttl`, `url_rewrites` (regex rewrite rules applied before fetch), `spa_markers` (extra JS-shell detection tokens), `cookie_file` (see below), `user_agent` (User-Agent override for HTTP and browser fetches; setting one scopes cached pages to it, so entries cached under the default stay valid), and the optional external PDF converter command/timeout. Multiple keys per provider are picked randomly per request to spread rate limits. See the [config reference](https://ketch.run/) for the full list.
 
 ### Cookies (BYO cookies.txt)
 
@@ -233,7 +258,14 @@ For agents that speak MCP instead of shelling out, `ketch mcp serve` runs the sa
 
 ```sh
 claude mcp add ketch -- ketch mcp serve
+
+# or, with no install step at all:
+claude mcp add ketch -- npx -y ketch-cli mcp serve
 ```
+
+The npm package carries the binary in a per-platform dependency, so `npx` runs
+it without a postinstall download — which keeps the server's cold start quick
+when a client relaunches it.
 
 Tool errors carry the exit-code taxonomy as stable message prefixes: `[validation]`, `[not_found]`, `[upstream]`, `[precondition]`, `[cancelled]`.
 
@@ -246,7 +278,7 @@ claude plugin marketplace add 1broseidon/ketch
 claude plugin install ketch@ketch
 ```
 
-The plugin registers `ketch mcp serve` as an MCP server and installs the ketch research skill. It does not bundle the binary: `ketch` >= v0.10.0 must be on PATH (`brew install 1broseidon/tap/ketch` or `go install github.com/1broseidon/ketch@latest`).
+The plugin registers `ketch mcp serve` as an MCP server and installs the ketch research skill. It does not bundle the binary: `ketch` >= v0.10.0 must be on PATH (`brew install ketch` or `go install github.com/1broseidon/ketch@latest`).
 
 ## Contributing
 
